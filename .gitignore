@@ -48,6 +48,9 @@ AGENTS.md
 CLAUDE.md
 .cursor
 
+# CI review output
+/artifacts/
+
 # local data dumps / exports
 /data_export/
 /userDocs/

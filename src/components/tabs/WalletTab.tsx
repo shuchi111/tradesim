@@ -10,6 +10,8 @@ interface WalletData {
   unrealizedPnl: number
   startingEquity: number
   sipAmountInr: number
+  sipDayOfMonth?: number
+  sipEligibleFrom?: string | null
   lastSipDate: string | null
 }
 
@@ -42,7 +44,36 @@ export default function WalletTab() {
   const [trades, setTrades] = useState<TradeRecord[]>([])
   const [prices, setPrices] = useState<Record<string, PriceInfo>>({})
   const [loading, setLoading] = useState(true)
+  const [resetting, setResetting] = useState(false)
   const { fmt, convert, symbol } = useCurrency()
+
+  const handleReset = async () => {
+    if (
+      !confirm(
+        'Reset portfolio to ₹1,00,000? This clears open positions and pending orders. SIP of ₹20,000 will start on the 5th of next month.'
+      )
+    ) {
+      return
+    }
+    setResetting(true)
+    try {
+      const res = await fetch('/api/account', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reset' }),
+      })
+      const json = await res.json()
+      if (json.error) {
+        alert(json.error)
+      } else {
+        await fetchData()
+      }
+    } catch {
+      alert('Reset failed')
+    } finally {
+      setResetting(false)
+    }
+  }
 
   const fetchData = useCallback(async () => {
     try {
@@ -102,7 +133,17 @@ export default function WalletTab() {
 
   return (
     <div className="flex flex-1 flex-col overflow-y-auto p-4">
-      <h2 className="mb-4 text-xl font-bold">👛 Wallet</h2>
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <h2 className="text-xl font-bold">👛 Wallet</h2>
+        <button
+          type="button"
+          onClick={handleReset}
+          disabled={resetting}
+          className="rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-50"
+        >
+          {resetting ? 'Resetting…' : 'Reset to ₹1,00,000'}
+        </button>
+      </div>
 
       {/* Cash Balance Cards */}
       {wallet && (
@@ -142,7 +183,7 @@ export default function WalletTab() {
                   ₹{wallet.sipAmountInr.toLocaleString('en-IN')}
                 </div>
                 <div className="mt-1 text-xs text-[var(--text-secondary)]">
-                  Auto-deposited monthly
+                  On the {wallet.sipDayOfMonth ?? 5}th of each month (IST)
                 </div>
               </div>
             </div>
@@ -154,9 +195,27 @@ export default function WalletTab() {
               </div>
               <div className="text-xs text-[var(--green)]">
                 Next deposit: {(() => {
-                  const last = wallet.lastSipDate ? new Date(wallet.lastSipDate) : new Date()
-                  const next = new Date(last.getFullYear(), last.getMonth() + 1, 1)
-                  return next.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+                  const day = wallet.sipDayOfMonth ?? 5
+                  const eligible = wallet.sipEligibleFrom
+                    ? new Date(wallet.sipEligibleFrom)
+                    : new Date()
+                  const last = wallet.lastSipDate ? new Date(wallet.lastSipDate) : null
+                  const base = last && last > eligible ? last : eligible
+                  const next = new Date(base.getFullYear(), base.getMonth() + (last ? 1 : 0), day)
+                  // If still in eligibility month without a deposit, use eligible month's day
+                  if (!last && wallet.sipEligibleFrom) {
+                    const e = new Date(wallet.sipEligibleFrom)
+                    return new Date(e.getFullYear(), e.getMonth(), day).toLocaleDateString('en-IN', {
+                      day: 'numeric',
+                      month: 'short',
+                      year: 'numeric',
+                    })
+                  }
+                  return next.toLocaleDateString('en-IN', {
+                    day: 'numeric',
+                    month: 'short',
+                    year: 'numeric',
+                  })
                 })()}
               </div>
             </div>

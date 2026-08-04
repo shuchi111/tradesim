@@ -25,6 +25,7 @@ import {
 const STARTING_CAPITAL = 100_000
 const MAX_POSITIONS = 8
 const CASH_RESERVE_PCT = 0.30
+const MAX_ALLOCATION_PER_TRADE = 25_000
 const STOP_LOSS_PCT = -7
 const TAKE_PROFIT_PCT = 15
 const PARTIAL_PROFIT_PCT = 5
@@ -34,6 +35,22 @@ const TIME_EXIT_DAYS = 10
 const TIME_EXIT_MIN_PCT = 3
 const CIRCUIT_BREAKER_DRAWDOWN_PCT = 6
 const CIRCUIT_BREAKER_DAILY_LOSS_PCT = 2.5 // % of total equity
+
+function sizeWholeShares(
+  equity: number,
+  confidence: number,
+  investable: number,
+  price: number
+): { qty: number; cost: number } {
+  let allocationPct = 0.04
+  if (confidence >= 90) allocationPct = 0.08
+  else if (confidence >= 80) allocationPct = 0.06
+  const capped = Math.min(equity * allocationPct, investable, MAX_ALLOCATION_PER_TRADE)
+  if (capped < 100 || price <= 0) return { qty: 0, cost: 0 }
+  const qty = Math.floor(capped / price)
+  if (qty < 1) return { qty: 0, cost: 0 }
+  return { qty, cost: qty * price }
+}
 
 // ─── Types ────────────────────────────────────────────────────────
 
@@ -465,30 +482,32 @@ export async function runBacktest(config: BacktestConfig): Promise<BacktestMetri
 
       const risk = checkRiskExit(pos, currentPrice, daysHeld, signal)
 
-      // Handle partial profit
+      // Handle partial profit (whole shares only; skip if fewer than 2 shares)
       if (risk.shouldPartialClose && !pos.partialExitTaken) {
-        const sellQty = pos.quantity * 0.5
-        const partialPnl = (currentPrice - pos.entryPrice) * sellQty
-        cash += sellQty * currentPrice
-        pos.quantity -= sellQty
-        pos.partialExitTaken = true
-        // Record partial as a separate mini-trade
-        trades.push({
-          symbol: pos.symbol,
-          side: 'sell',
-          entryDate: pos.entryDate,
-          exitDate: date,
-          entryPrice: pos.entryPrice,
-          exitPrice: currentPrice,
-          quantity: sellQty,
-          pnl: partialPnl,
-          pnlPct,
-          exitReason: 'partial_profit',
-          entryReason: pos.entryReason,
-          strategy: pos.strategy,
-          maxFavorable: ((pos.peakPrice - pos.entryPrice) / pos.entryPrice) * 100,
-          maxAdverse: pos.troughPrice > 0 ? ((pos.troughPrice - pos.entryPrice) / pos.entryPrice) * 100 : 0,
-        })
+        const sellQty = Math.floor(pos.quantity / 2)
+        if (sellQty >= 1) {
+          const partialPnl = (currentPrice - pos.entryPrice) * sellQty
+          cash += sellQty * currentPrice
+          pos.quantity -= sellQty
+          pos.partialExitTaken = true
+          // Record partial as a separate mini-trade
+          trades.push({
+            symbol: pos.symbol,
+            side: 'sell',
+            entryDate: pos.entryDate,
+            exitDate: date,
+            entryPrice: pos.entryPrice,
+            exitPrice: currentPrice,
+            quantity: sellQty,
+            pnl: partialPnl,
+            pnlPct,
+            exitReason: 'partial_profit',
+            entryReason: pos.entryReason,
+            strategy: pos.strategy,
+            maxFavorable: ((pos.peakPrice - pos.entryPrice) / pos.entryPrice) * 100,
+            maxAdverse: pos.troughPrice > 0 ? ((pos.troughPrice - pos.entryPrice) / pos.entryPrice) * 100 : 0,
+          })
+        }
       }
 
       if (risk.shouldClose) {
@@ -584,24 +603,16 @@ export async function runBacktest(config: BacktestConfig): Promise<BacktestMetri
         // Sort by confidence descending
         candidates.sort((a, b) => b.confidence - a.confidence)
 
-        // Execute buys — sizing based on CURRENT equity (mirrors live trading)
+        // Execute buys — whole shares, ₹25k max/trade, fill only available signal slots (not forced to 8)
         const slotsAvailable = MAX_POSITIONS - positions.length
         for (const c of candidates.slice(0, slotsAvailable)) {
           const investableNow = cash - currentEquity * CASH_RESERVE_PCT
           if (investableNow < 500) break
 
-          // Position sizing based on current equity (same as live trading)
-          let allocationPct = 0.04
-          if (c.confidence >= 90) allocationPct = 0.08
-          else if (c.confidence >= 80) allocationPct = 0.06
-          else allocationPct = 0.04
+          const { qty, cost } = sizeWholeShares(currentEquity, c.confidence, investableNow, c.price)
+          if (qty < 1) continue
 
-          const targetAlloc = currentEquity * allocationPct
-          const allocation = Math.min(targetAlloc, investableNow)
-          if (allocation < 100) continue
-
-          const qty = allocation / c.price
-          cash -= qty * c.price
+          cash -= cost
 
           positions.push({
             symbol: c.symbol,

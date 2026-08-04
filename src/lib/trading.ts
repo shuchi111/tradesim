@@ -3,9 +3,74 @@ import { getPrice } from './market'
 import { getInstrument, INSTRUMENTS } from '@/types'
 
 // Starting balance is ₹1,00,000 INR (1 Lakh) — stored natively in INR.
-const STARTING_BALANCE = 100000
+export const STARTING_BALANCE = 100000
+export const SIP_AMOUNT_INR = 20000
+/** SIP deposits on this day of each month (IST), starting the month after portfolio start/reset. */
+export const SIP_DAY_OF_MONTH = 5
+/** Keep this fraction of starting equity as uninvestable cash reserve. */
+export const CASH_RESERVE_PCT = 0.30
+/** Hard cap per new position so capital is not concentrated in one stock. */
+export const MAX_ALLOCATION_PER_TRADE = 25000
+export const MAX_POSITIONS_ALLOWED = 8
+const MIN_INVESTABLE_CASH = 500
+const MIN_TRADE_VALUE = 100
 // Sell penalty: flat ₹150 INR per sell, permanently lost.
 const SELL_PENALTY_FLAT = 150
+
+/** Calendar parts in Asia/Kolkata (IST). */
+export function getIstParts(date: Date = new Date()): { year: number; month: number; day: number } {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date)
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value)
+  return { year: get('year'), month: get('month'), day: get('day') }
+}
+
+/** First instant of the next IST calendar month (approx. via UTC noon on day 1). */
+export function firstOfNextIstMonth(from: Date = new Date()): Date {
+  const { year, month } = getIstParts(from)
+  const nextYear = month === 12 ? year + 1 : year
+  const nextMonth = month === 12 ? 1 : month + 1
+  // Noon UTC on the 1st avoids DST edge cases; IST is fixed UTC+5:30
+  return new Date(Date.UTC(nextYear, nextMonth - 1, 1, 6, 30, 0))
+}
+
+/** Whole-share quantity helper — rejects fractions. */
+export function requireWholeShares(quantity: number): number {
+  if (!Number.isFinite(quantity) || quantity <= 0) {
+    throw new Error('Quantity must be a positive whole number')
+  }
+  if (!Number.isInteger(quantity)) {
+    throw new Error('Fractional quantities are not allowed — use whole shares only')
+  }
+  return quantity
+}
+
+/** Confidence-tiered size, capped at MAX_ALLOCATION_PER_TRADE; returns whole-share qty + cost. */
+export function sizePosition(opts: {
+  totalEquity: number
+  confidence: number
+  investableCash: number
+  price: number
+  maxAllocation?: number
+}): { qty: number; allocation: number; allocationPct: number } {
+  const maxAllocation = opts.maxAllocation ?? MAX_ALLOCATION_PER_TRADE
+  let allocationPct = 0.04
+  if (opts.confidence >= 90) allocationPct = 0.08
+  else if (opts.confidence >= 80) allocationPct = 0.06
+
+  const targetAllocation = opts.totalEquity * allocationPct
+  const capped = Math.min(targetAllocation, opts.investableCash, maxAllocation)
+  if (capped < MIN_TRADE_VALUE || opts.price <= 0) {
+    return { qty: 0, allocation: 0, allocationPct }
+  }
+  const qty = Math.floor(capped / opts.price)
+  if (qty < 1) return { qty: 0, allocation: 0, allocationPct }
+  return { qty, allocation: qty * opts.price, allocationPct }
+}
 
 /**
  * Instruments available for auto-trading.
@@ -103,11 +168,78 @@ export async function ensureAccount() {
         id: 1,
         balance: STARTING_BALANCE,
         startingEquity: STARTING_BALANCE,
-        sipAmountInr: 20000,
+        sipAmountInr: SIP_AMOUNT_INR,
+        sipDayOfMonth: SIP_DAY_OF_MONTH,
+        sipEligibleFrom: firstOfNextIstMonth(),
+      },
+    })
+  } else if (!account.sipEligibleFrom) {
+    // Backfill: if SIP already ran, stay eligible; otherwise start next IST month
+    const alreadyStarted = !!(account.lastSipDate || (account.totalDeposited ?? 0) > 0)
+    account = await prisma.account.update({
+      where: { id: 1 },
+      data: {
+        sipDayOfMonth: account.sipDayOfMonth || SIP_DAY_OF_MONTH,
+        sipEligibleFrom: alreadyStarted
+          ? new Date('2000-01-01T00:00:00.000Z')
+          : firstOfNextIstMonth(),
       },
     })
   }
   return account
+}
+
+/**
+ * Reset portfolio to ₹1,00,000, clear open positions/pending orders,
+ * and schedule SIP (₹20,000) from the subsequent IST month on sipDayOfMonth.
+ * Closed trade history is kept for analytics.
+ */
+export async function resetPortfolio(): Promise<{
+  balance: number
+  sipEligibleFrom: Date
+  sipDayOfMonth: number
+  sipAmountInr: number
+}> {
+  await prisma.position.deleteMany()
+  await prisma.order.deleteMany({ where: { status: 'pending' } })
+
+  const sipEligibleFrom = firstOfNextIstMonth()
+  const account = await prisma.account.upsert({
+    where: { id: 1 },
+    create: {
+      id: 1,
+      balance: STARTING_BALANCE,
+      startingEquity: STARTING_BALANCE,
+      totalDeposited: 0,
+      lastSipDate: null,
+      sipAmountInr: SIP_AMOUNT_INR,
+      sipDayOfMonth: SIP_DAY_OF_MONTH,
+      sipEligibleFrom,
+    },
+    update: {
+      balance: STARTING_BALANCE,
+      startingEquity: STARTING_BALANCE,
+      totalDeposited: 0,
+      lastSipDate: null,
+      sipAmountInr: SIP_AMOUNT_INR,
+      sipDayOfMonth: SIP_DAY_OF_MONTH,
+      sipEligibleFrom,
+    },
+  })
+
+  await createNotification(
+    'system',
+    'Portfolio Reset',
+    `Portfolio reset to ₹${STARTING_BALANCE.toLocaleString('en-IN')}. SIP of ₹${SIP_AMOUNT_INR.toLocaleString('en-IN')} starts on the ${SIP_DAY_OF_MONTH}th of next month (not this month).`,
+    'info'
+  )
+
+  return {
+    balance: account.balance,
+    sipEligibleFrom: account.sipEligibleFrom!,
+    sipDayOfMonth: account.sipDayOfMonth,
+    sipAmountInr: account.sipAmountInr,
+  }
 }
 
 /* ============================================================
@@ -115,27 +247,40 @@ export async function ensureAccount() {
  * ============================================================ */
 
 /**
- * Check if a SIP deposit is due and process it if so.
- *
- * Deposits `account.sipAmountInr` (default ₹20,000) into the wallet once
- * per calendar month. Idempotent — multiple calls within the same month
- * only deposit once.
+ * Deposit SIP on/after the configured IST day of month, once per IST month,
+ * only after `sipEligibleFrom` (subsequent month after start/reset).
  *
  * @returns the amount deposited in INR, or 0 if no deposit was due.
  */
 export async function processSipDeposit(): Promise<number> {
   const account = await ensureAccount()
   const now = new Date()
+  const ist = getIstParts(now)
+  const sipDay = account.sipDayOfMonth || SIP_DAY_OF_MONTH
 
-  const isDue =
-    account.lastSipDate === null ||
-    now.getUTCFullYear() > account.lastSipDate.getUTCFullYear() ||
-    (now.getUTCFullYear() === account.lastSipDate.getUTCFullYear() &&
-      now.getUTCMonth() > account.lastSipDate.getUTCMonth())
+  // Fixed calendar day (e.g. 5th) — not before that day in the month
+  if (ist.day < sipDay) return 0
 
-  if (!isDue) return 0
+  // Not eligible until subsequent month after start/reset
+  const eligibleFrom = account.sipEligibleFrom
+    ? getIstParts(account.sipEligibleFrom)
+    : null
+  if (eligibleFrom) {
+    if (
+      ist.year < eligibleFrom.year ||
+      (ist.year === eligibleFrom.year && ist.month < eligibleFrom.month)
+    ) {
+      return 0
+    }
+  }
 
-  const depositAmount = account.sipAmountInr
+  // Already deposited this IST month?
+  if (account.lastSipDate) {
+    const last = getIstParts(account.lastSipDate)
+    if (last.year === ist.year && last.month === ist.month) return 0
+  }
+
+  const depositAmount = account.sipAmountInr || SIP_AMOUNT_INR
 
   await prisma.account.update({
     where: { id: 1 },
@@ -149,7 +294,7 @@ export async function processSipDeposit(): Promise<number> {
   await createNotification(
     'system',
     'SIP Deposit',
-    `Monthly SIP of ₹${depositAmount.toLocaleString('en-IN')} added to your wallet.`,
+    `Monthly SIP of ₹${depositAmount.toLocaleString('en-IN')} added to your wallet (${sipDay}th IST).`,
     'info'
   )
 
@@ -240,11 +385,31 @@ async function processFill(
   exitCtx?: ExitContext
 ) {
   const account = await ensureAccount()
+
+  // Whole shares only (allow exact full-close of a legacy fractional position)
+  if (side === 'buy') {
+    requireWholeShares(quantity)
+  } else {
+    const existingPos = await prisma.position.findUnique({ where: { symbol } })
+    const isFullClose =
+      existingPos != null && Math.abs(existingPos.quantity - quantity) < 1e-9
+    if (!isFullClose) {
+      requireWholeShares(quantity)
+    }
+  }
+
   const cost = price * quantity
+  const cashReserve = account.startingEquity * CASH_RESERVE_PCT
 
   if (side === 'buy') {
     if (cost > account.balance) {
       throw new Error('Insufficient balance')
+    }
+    // Minimum balance / cash-reserve guardrail before any investment
+    if (account.balance - cost < cashReserve) {
+      throw new Error(
+        `Minimum balance rule: must keep ₹${cashReserve.toLocaleString('en-IN')} (${CASH_RESERVE_PCT * 100}% of starting equity) in the wallet`
+      )
     }
 
     await prisma.account.update({
@@ -295,7 +460,7 @@ async function processFill(
       await createNotification(
         'trade_open',
         `Position Opened: ${symbol}`,
-        `Bought ${quantity.toFixed(4)} @ ₹${price.toFixed(2)} — ${entryCtx?.reason || 'Manual buy'}`,
+        `Bought ${quantity} @ ₹${price.toFixed(2)} — ${entryCtx?.reason || 'Manual buy'}`,
         'info',
         symbol,
         entryCtx?.details
@@ -374,7 +539,7 @@ async function processFill(
       await createNotification(
         'trade_close',
         `Position Closed: ${symbol}`,
-        `Closed ${existing.quantity.toFixed(4)} @ ₹${price.toFixed(2)} — P&L: ${pnlStr} (${exitPnlPct.toFixed(1)}%) — ${exitCtx?.reason || 'Manual'}`,
+        `Closed ${existing.quantity} @ ₹${price.toFixed(2)} — P&L: ${pnlStr} (${exitPnlPct.toFixed(1)}%) — ${exitCtx?.reason || 'Manual'}`,
         pnl >= 0 ? 'success' : 'warning',
         symbol,
         { pnl, pnlPct: exitPnlPct, ...exitCtx?.details }
@@ -522,8 +687,8 @@ export async function getRiskStatus(): Promise<RiskStatus> {
     dailyPnl,
     // Circuit breaker: stop new buys if drawdown > 6% or daily loss > 2.5%
     circuitBreakerActive: drawdownPct > 6 || dailyPnl < -(totalEquity * 0.025),
-    maxPositionsAllowed: 8,
-    maxRiskPerTradePct: 8, // max 8% of equity per position
+    maxPositionsAllowed: MAX_POSITIONS_ALLOWED,
+    maxRiskPerTradePct: 8, // max 8% of equity per position (also capped at ₹25k)
   }
 }
 
@@ -698,7 +863,22 @@ export async function runAutoTrade(): Promise<AutoTradeResult[]> {
   const { calculateConfidenceScore } = await import('./ml/confidence')
   const results: AutoTradeResult[] = []
 
-  // --- 0. Check circuit breaker ---
+  // --- 0a. Monthly SIP (fixed IST day, starting subsequent month after reset) ---
+  try {
+    const deposited = await processSipDeposit()
+    if (deposited > 0) {
+      results.push({
+        instrument: 'PORTFOLIO',
+        signal: 'HOLD',
+        action: 'SIP_DEPOSIT',
+        detail: `SIP deposited ₹${deposited.toLocaleString('en-IN')} into wallet.`,
+      })
+    }
+  } catch (e) {
+    console.error('[sip] processSipDeposit failed:', e)
+  }
+
+  // --- 0b. Check circuit breaker ---
   const risk = await getRiskStatus()
 
   // --- 1. Risk-manage existing positions FIRST (stop-loss, take-profit, trailing stop) ---
@@ -764,10 +944,10 @@ export async function runAutoTrade(): Promise<AutoTradeResult[]> {
         { quantity: pos.quantity, createdAt: pos.createdAt, partialExitTaken: pos.partialExitTaken }
       )
 
-      // Handle partial profit taking (sell 50%, mark position)
+      // Handle partial profit taking (sell ~50% in whole shares; need ≥2 shares)
       if (riskCheck.shouldPartialClose && !pos.partialExitTaken) {
-        const sellQty = pos.quantity * 0.5
-        if (sellQty > 0) {
+        const sellQty = Math.floor(pos.quantity / 2)
+        if (sellQty >= 1) {
           await closePositionAtMarket(pos.symbol, {
             reason: 'partial_profit',
             details: {
@@ -788,7 +968,7 @@ export async function runAutoTrade(): Promise<AutoTradeResult[]> {
             instrument: pos.symbol,
             signal,
             action: 'PARTIAL_SOLD',
-            detail: `${riskCheck.reason} — sold ${sellQty.toFixed(4)} @ ₹${currentPrice.toFixed(2)}, P&L ₹${partialPnl.toFixed(2)}${strategyDetail}`,
+            detail: `${riskCheck.reason} — sold ${sellQty} @ ₹${currentPrice.toFixed(2)}, P&L ₹${partialPnl.toFixed(2)}${strategyDetail}`,
             pnl: partialPnl,
             pnlPct,
           })
@@ -819,7 +999,7 @@ export async function runAutoTrade(): Promise<AutoTradeResult[]> {
           instrument: pos.symbol,
           signal,
           action: 'SOLD',
-          detail: `${riskCheck.reason} — closed ${pos.quantity.toFixed(4)} @ ₹${currentPrice.toFixed(2)}${strategyDetail}`,
+          detail: `${riskCheck.reason} — closed ${pos.quantity} @ ₹${currentPrice.toFixed(2)}${strategyDetail}`,
           pnl,
           pnlPct,
         })
@@ -885,16 +1065,17 @@ export async function runAutoTrade(): Promise<AutoTradeResult[]> {
   // --- 4. Scan all instruments for buy signals ---
   const account = await ensureAccount()
 
-  // Keep 30% cash reserve (more conservative)
-  const cashReserve = account.startingEquity * 0.30
-  let investableCash = Math.max(0, account.balance - cashReserve)
+  // Keep 30% of starting equity as minimum wallet balance (cash reserve)
+  const cashReserve = account.startingEquity * CASH_RESERVE_PCT
+  let remainingBalance = account.balance
+  let investableCash = Math.max(0, remainingBalance - cashReserve)
 
-  if (investableCash < 500) {
+  if (remainingBalance < cashReserve || investableCash < MIN_INVESTABLE_CASH) {
     results.push({
       instrument: 'PORTFOLIO',
       signal: 'HOLD',
       action: 'LOW_CASH',
-      detail: `Low investable cash (₹${investableCash.toFixed(0)} after 30% reserve). Waiting.`,
+      detail: `Minimum balance rule: need ₹${cashReserve.toLocaleString('en-IN')} reserve + investable cash (have ₹${remainingBalance.toFixed(0)}, investable ₹${investableCash.toFixed(0)}). Waiting.`,
     })
     return results
   }
@@ -951,29 +1132,25 @@ export async function runAutoTrade(): Promise<AutoTradeResult[]> {
   // Sort by confidence (highest first) — buy the best opportunities
   buyCandidates.sort((a, b) => b.confidence - a.confidence)
 
-  // --- 5. Execute buys with confidence-based position sizing ---
+  // --- 5. Execute buys: intelligent count (1..max slots) by signal quality; ₹25k max/trade; whole shares ---
   const slotsAvailable = risk.maxPositionsAllowed - activePositions.length
   const topCandidates = buyCandidates.slice(0, slotsAvailable)
 
   for (const candidate of topCandidates) {
-    if (investableCash < 500) break
-
-    // Position size based on confidence (CAPPED at 8% per trade)
-    let allocationPct = 0.04
-    if (candidate.confidence >= 90) allocationPct = 0.08
-    else if (candidate.confidence >= 80) allocationPct = 0.06
-    else allocationPct = 0.04
-
-    const targetAllocation = risk.totalEquity * allocationPct
-    const allocation = Math.min(targetAllocation, investableCash)
-
-    if (allocation < 100) continue
+    investableCash = Math.max(0, remainingBalance - cashReserve)
+    if (investableCash < MIN_INVESTABLE_CASH) break
 
     const price = await getMarketPrice(candidate.symbol)
-    const qty = allocation / price
+    const { qty, allocation, allocationPct } = sizePosition({
+      totalEquity: risk.totalEquity,
+      confidence: candidate.confidence,
+      investableCash,
+      price,
+    })
 
-    if (qty > 0) {
-      try {
+    if (qty < 1) continue
+
+    try {
         const stratNames = candidate.signal.strategies
           ? candidate.signal.strategies.filter(s => s.signal === 'BUY').map(s => s.name).join('+')
           : 'multi-strategy'
@@ -1016,20 +1193,20 @@ export async function runAutoTrade(): Promise<AutoTradeResult[]> {
               atr: candidate.signal.atr,
               indicators: candidate.signal.indicators,
               allocationPct,
+              maxAllocationCap: MAX_ALLOCATION_PER_TRADE,
             },
           }
         )
-        investableCash -= allocation
+        remainingBalance -= allocation
         results.push({
           instrument: candidate.symbol,
           signal: 'BUY',
           action: 'BOUGHT',
-          detail: `Bought ${qty.toFixed(4)} @ ₹${price.toFixed(2)} (₹${allocation.toFixed(0)}, conf ${candidate.confidence}%${candidate.aiConfidence !== null ? ` [AI: ${candidate.aiConfidence}%]` : ''}, ${stratNames}). SL: ₹${candidate.signal.stopLoss?.toFixed(2) ?? 'N/A'}, TP: ₹${candidate.signal.takeProfit?.toFixed(2) ?? 'N/A'}`,
+          detail: `Bought ${qty} @ ₹${price.toFixed(2)} (₹${allocation.toFixed(0)}, conf ${candidate.confidence}%${candidate.aiConfidence !== null ? ` [AI: ${candidate.aiConfidence}%]` : ''}, ${stratNames}). SL: ₹${candidate.signal.stopLoss?.toFixed(2) ?? 'N/A'}, TP: ₹${candidate.signal.takeProfit?.toFixed(2) ?? 'N/A'}`,
         })
       } catch {
-        // Skip on error
+        // Skip on error (e.g. min-balance race)
       }
-    }
   }
 
   // If nothing happened, note it

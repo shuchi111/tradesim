@@ -91,6 +91,8 @@ export interface AccountData {
   equity: number
   positionsValue: number
   sipAmountInr: number
+  sipDayOfMonth?: number
+  sipEligibleFrom?: string | null
   lastSipDate: string | null
 }
 

@@ -55,13 +55,13 @@ export default function TradingPanel({ symbol, onTradeComplete }: TradingPanelPr
     fetchBalance()
   }, [symbol, onTradeComplete])
 
-  const qty = parseFloat(quantity) || 0
+  const qty = Number(quantity)
   const tradePrice = orderType === 'limit' ? parseFloat(limitPrice) || 0 : nativePrice
-  const orderValueUsd = qty * tradePrice
+  const orderValueUsd = (Number.isFinite(qty) ? qty : 0) * tradePrice
 
   const handleTrade = async () => {
-    if (qty <= 0) {
-      setMessage({ type: 'error', text: 'Enter a valid quantity' })
+    if (!Number.isFinite(qty) || qty <= 0 || !Number.isInteger(qty)) {
+      setMessage({ type: 'error', text: 'Enter a whole-share quantity (no decimals)' })
       return
     }
 
@@ -99,11 +99,12 @@ export default function TradingPanel({ symbol, onTradeComplete }: TradingPanelPr
     }
   }
 
-  const maxQtyNative = balance / nativePrice
+  // Leave 30% cash reserve when sizing % buttons
+  const investable = Math.max(0, balance * 0.7)
+  const maxQtyNative = nativePrice > 0 ? Math.floor(investable / nativePrice) : 0
   const setPercent = (pct: number) => {
-    const q = (maxQtyNative * pct) / 100
-    const decimals = nativePrice > 1000 ? 0 : nativePrice > 10 ? 2 : 4
-    setQuantity(q.toFixed(decimals))
+    const q = Math.floor((maxQtyNative * pct) / 100)
+    setQuantity(String(Math.max(0, q)))
   }
 
   return (
@@ -189,13 +190,15 @@ export default function TradingPanel({ symbol, onTradeComplete }: TradingPanelPr
       {/* Quantity */}
       <div className="flex flex-col gap-1">
         <label className="text-xs text-[var(--text-secondary)]">
-          Quantity ({inst?.base})
+          Quantity — whole shares ({inst?.base})
         </label>
         <input
           type="number"
+          step={1}
+          min={1}
           value={quantity}
-          onChange={(e) => setQuantity(e.target.value)}
-          placeholder="0.00"
+          onChange={(e) => setQuantity(e.target.value.replace(/[^\d]/g, ''))}
+          placeholder="0"
           className="rounded-md bg-[var(--bg-tertiary)] px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-[var(--blue)]"
         />
       </div>

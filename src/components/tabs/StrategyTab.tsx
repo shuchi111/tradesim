@@ -126,10 +126,12 @@ export default function StrategyTab({ onTradeComplete }: StrategyTabProps) {
             <div>💸 <b>Partial Profit:</b> Sell 50% at <span className="text-[var(--green)]">+5%</span>, stop → breakeven</div>
             <div>⏰ <b>Time Exit:</b> Close after 10 days if stagnant (&lt;3% move)</div>
             <div>⚠️ <b>Circuit Breaker:</b> Stop buying if drawdown &gt; <span className="text-[var(--red)]">6%</span></div>
-            <div>📊 <b>Max Positions:</b> 8 instruments simultaneously</div>
-            <div>💰 <b>Cash Reserve:</b> Always keep <span className="text-[var(--green)]">30%</span> in cash</div>
-            <div>📏 <b>Position Sizing:</b> 4–8% of equity (confidence-tiered)</div>
+            <div>📊 <b>Max Positions:</b> up to 8 (not forced — only quality signals)</div>
+            <div>💰 <b>Cash Reserve:</b> Always keep <span className="text-[var(--green)]">30%</span> in wallet</div>
+            <div>📏 <b>Position Sizing:</b> 4–8% of equity, hard cap <span className="text-[var(--green)]">₹25,000</span>/trade</div>
+            <div>🔢 <b>Quantity:</b> Whole shares only (no fractional qty)</div>
             <div>📅 <b>Daily Loss Limit:</b> Stop if daily loss &gt; <span className="text-[var(--red)]">2.5%</span> of equity</div>
+            <div>🏦 <b>SIP:</b> ₹20,000 on the <b>5th</b> IST, starting the month after reset</div>
             <div>🔍 <b>Scans:</b> All 50 NIFTY stocks every 2 minutes</div>
             <div>🎯 <b>Min Confidence:</b> 70% (multi-strategy) / 80% (single strategy)</div>
           </div>

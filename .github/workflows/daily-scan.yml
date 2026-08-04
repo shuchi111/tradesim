@@ -24,7 +24,9 @@ jobs:
       - name: Require LLM secrets (AI scoring M7)
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
         run: |
           KEY="${ANTHROPIC_API_KEY:-$LLM_API_KEY}"
           if [ -z "$KEY" ]; then
@@ -32,6 +34,9 @@ jobs:
             exit 1
           fi
           echo "LLM API key is set"
+          BASE="${ANTHROPIC_BASE_URL:-${LLM_BASE_URL:-https://api.z.ai/api/anthropic}}"
+          echo "ANTHROPIC_BASE_URL will resolve to: $BASE"
+          # Turso not required here — scanner uses local scanner/tauric.db (+ artifact upload)
 
       - name: Sync scanner deps (skip torch)
         run: uv sync --no-install-package torch

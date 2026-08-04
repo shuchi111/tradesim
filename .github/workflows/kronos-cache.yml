@@ -30,6 +30,8 @@ jobs:
       - name: Refresh Kronos cache
         env:
           HF_HOME: ${{ github.workspace }}/.cache/huggingface
+          # Kronos writes local scanner/tauric.db only (uploaded as artifact).
+          # Portfolio Turso DB is not used by this job.
         run: |
           uv run --no-sync --directory scanner python -c "
           import asyncio

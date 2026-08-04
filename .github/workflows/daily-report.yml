@@ -24,6 +24,22 @@ jobs:
       - name: Generate Prisma client
         run: npx prisma generate
 
+      - name: Require Turso / database secrets
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+        run: |
+          if [ -z "$TURSO_DATABASE_URL" ] || [ -z "$TURSO_AUTH_TOKEN" ]; then
+            if [ -z "$DATABASE_URL" ]; then
+              echo "::error::Set TURSO_DATABASE_URL + TURSO_AUTH_TOKEN (preferred) or DATABASE_URL. Daily report reads the portfolio DB."
+              exit 1
+            fi
+            echo "::warning::Turso secrets missing — falling back to DATABASE_URL only."
+          else
+            echo "Turso secrets are set: $TURSO_DATABASE_URL"
+          fi
+
       - name: Generate daily report
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}

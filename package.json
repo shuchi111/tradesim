@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
     "seed": "npx tsx prisma/seed.ts",
@@ -15,7 +15,7 @@
     "pr:review": "npx tsx scripts/ci/pr-quant-review.ts",
     "scanner": "uv run --no-sync --project . --directory scanner python main.py",
     "scanner:sync": "uv sync",
-    "postinstall": "node scripts/copy-lightningcss-native.js"
+    "postinstall": "prisma generate && node scripts/copy-lightningcss-native.js"
   },
   "dependencies": {
     "@libsql/client": "^0.17.4",

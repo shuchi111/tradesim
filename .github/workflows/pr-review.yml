@@ -12,17 +12,18 @@ jobs:
   review:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
     env:
-      API_TIMEOUT_MS: 3000000
+      API_TIMEOUT_MS: '3000000'
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
       LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
       LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
       LLM_MODEL: ${{ secrets.LLM_MODEL }}
-    permissions:
-      contents: read
-      pull-requests: write
-      id-token: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -30,20 +31,23 @@ jobs:
           fetch-depth: 1
 
       - name: Require LLM secrets
+        id: secrets
         run: |
           KEY="${ANTHROPIC_API_KEY:-$LLM_API_KEY}"
           if [ -z "$KEY" ]; then
             echo "::error::PR review requires AI. Set secret ANTHROPIC_API_KEY (or LLM_API_KEY)."
             exit 1
           fi
-          # Match other workflows: prefer Anthropic vars, fall back to LLM_* / Z.ai default
-          export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-$LLM_API_KEY}"
-          export ANTHROPIC_BASE_URL="${ANTHROPIC_BASE_URL:-${LLM_BASE_URL:-https://api.z.ai/api/anthropic}}"
-          echo "ANTHROPIC_API_KEY is set"
-          echo "ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL}"
-          # Expose resolved values to later steps
-          echo "ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}" >> "$GITHUB_ENV"
-          echo "ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL}" >> "$GITHUB_ENV"
+          BASE="${ANTHROPIC_BASE_URL:-${LLM_BASE_URL:-https://api.z.ai/api/anthropic}}"
+          # Mask and export for the Claude step (do not echo key)
+          echo "::add-mask::$KEY"
+          echo "ANTHROPIC_API_KEY=$KEY" >> "$GITHUB_ENV"
+          echo "ANTHROPIC_BASE_URL=$BASE" >> "$GITHUB_ENV"
+          echo "ANTHROPIC_AUTH_TOKEN=$KEY" >> "$GITHUB_ENV"
+          echo "Resolved ANTHROPIC_BASE_URL=$BASE"
+          if echo "$BASE" | grep -qi 'z.ai\|zai'; then
+            echo "::warning::Custom Z.ai base URL is set. anthropics/claude-code-action expects Anthropic-compatible tool calling. If the job succeeds but no PR comment appears, try official Anthropic API (api.anthropic.com) or check the Action log for tool/API errors."
+          fi
 
       - name: Claude quant / finance PR review
         uses: anthropics/claude-code-action@v1
@@ -52,11 +56,18 @@ jobs:
           ANTHROPIC_BASE_URL: ${{ env.ANTHROPIC_BASE_URL }}
           ANTHROPIC_AUTH_TOKEN: ${{ env.ANTHROPIC_API_KEY }}
         with:
+          # Must use env after the resolve step (supports LLM_* fallback)
           anthropic_api_key: ${{ env.ANTHROPIC_API_KEY }}
+          github_token: ${{ github.token }}
           track_progress: true
           prompt: |
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
+
+            IMPORTANT: You MUST post your review to GitHub using tools:
+            - Use `Bash(gh pr comment ...)` for the full review body (required).
+            - Use `mcp__github_inline_comment__create_inline_comment` with confirmed=true for line-specific issues.
+            Do not only print the review in the Action log — the PR must get a comment.
 
             You are a Senior Quantitative Developer at BlackRock performing rigorous PR reviews for
             TypeScript/Next.js trading systems, Python data/ML scanners, and financial analytics
@@ -210,4 +221,4 @@ jobs:
             Use top-level comments for general observations and suggestions. Only provide actionable insights. Avoid general praise and focus on constructive criticism.
 
           claude_args: |
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh api:*)"

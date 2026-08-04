@@ -116,12 +116,32 @@ SCANNER_PORT=8000
 # NEXT_PUBLIC_SCANNER_URL=http://localhost:8000
 ```
 
-When `TURSO_DATABASE_URL` is set, the **app** uses Turso. Prisma CLI (`db push` / migrate) always uses local SQLite — apply schema to Turso with:
+When `TURSO_DATABASE_URL` is set, the **app** uses Turso. Prisma CLI (`db push` / migrate) always uses local SQLite.
+
+### Migrate schema to Turso
+
+**Full init / copy local → Turso** (wipes Turso tables then copies from local SQLite):
 
 ```bash
 npx prisma migrate diff --from-empty --to-schema prisma/schema.prisma --script -o prisma/turso-init.sql
 npx tsx --env-file=.env scripts/migrate-sqlite-to-turso.ts
 ```
+
+**SIP columns only** (safe `ALTER TABLE`, no data wipe) — run after pulling Account SIP fields:
+
+```bash
+npx tsx --env-file=.env scripts/migrate-turso-sip-columns.ts
+```
+
+### Reset portfolio (Turso or local)
+
+Resets cash to **₹1,00,000**, clears open positions + pending orders, and schedules SIP **₹20,000 on the 5th IST** starting the **next** month:
+
+```bash
+npx tsx --env-file=.env scripts/reset-portfolio.ts
+```
+
+(Uses Turso when `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` are set; otherwise local SQLite.)
 
 LLM / agent keys (optional): `ANTHROPIC_BASE_URL`, `ANTHROPIC_API_KEY`, `LLM_MODEL`.
 
@@ -135,6 +155,9 @@ LLM / agent keys (optional): `ANTHROPIC_BASE_URL`, `ANTHROPIC_API_KEY`, `LLM_MOD
 | `npm run scanner` | Start FastAPI scanner (no sync) |
 | `npm run autotrade` | Server-side auto-trade loop |
 | `npm run seed` | Seed DB |
+| `npm run db:migrate-turso` | Apply SIP column migration to Turso |
+| `npm run db:reset-portfolio` | Reset portfolio to ₹1L (+ SIP next month) |
+| `npm run pr:review` | Quant/finance static PR review script |
 | `npm test` | Vitest |
 
 ## Layout
@@ -172,8 +195,27 @@ See [`.github/CRON-SCHEDULE.md`](.github/CRON-SCHEDULE.md) — **4 workflows**:
 3. Auto-trade — every **15 min**, 9:15–15:30 IST  
 4. Daily report — 4:00 PM IST  
 
+### PR review (quant / finance)
+
+On every pull request, [`.github/workflows/pr-review.yml`](.github/workflows/pr-review.yml) runs **Claude Code Action** with a senior quant/finance review prompt (TradeSim portfolio guardrails + correctness checklist). It posts PR / inline comments.
+
+**Secrets (same as other Actions):** `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL` (fallback: `LLM_API_KEY`, `LLM_BASE_URL`).
+
+Details: [`.github/PR-REVIEW.md`](.github/PR-REVIEW.md).
+
+Optional local static scan (no LLM):
+
+```bash
+npm run pr:review
+npx tsx scripts/ci/pr-quant-review.ts --base origin/main
+npx tsx scripts/ci/pr-quant-review.ts --all
+```
+
+Cursor Bugbot: local `.cursor/BUGBOT.md` (gitignored — keep under `.cursor/` on your machine). Comment `cursor review` / `bugbot run` on a PR if Bugbot is enabled.
+
 ## Notes
 
-- Starting equity ₹1,00,000; monthly SIP is **capital**, not P&L.
-- Cursor project rules live in `.cursor/rules/`.
+- Starting equity ₹1,00,000; monthly SIP ₹20,000 on the **5th (IST)**, starting the month after portfolio start/reset (capital, not P&L).
+- Whole-share quantities only; max ₹25,000 allocation per trade; 30% cash reserve; up to 8 open positions (not forced).
+- Cursor project rules live in local `.cursor/rules/` (gitignored).
 

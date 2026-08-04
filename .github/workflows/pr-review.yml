@@ -167,19 +167,50 @@ jobs:
              - Suggest running: `npm run pr:review` and `npm test`
 
             OUTPUT RULES (MANDATORY)
-             - Provide feedback ONLY in the categories below.
-             - If a category has no relevant comments, write exactly: "No issues found."
-               (and do NOT add any detail).
-             - For issues, provide ONLY actionable insights (no generic praise).
-             - Use severity labels on each issue: [BLOCKER], [HIGH], [MED], [LOW].
-             - Provide "inline comments" by referencing location like:
-               `path/to/file.ts:L12-L34` or `path/to/file.ts::functionName` (if line numbers absent).
-             - Use top-level comments for general issues; use inline-style references for specific spots.
-             - Do NOT invent files, CI results, or behavior; if you infer, label it clearly as an assumption.
+             - Post ONE top-level PR comment with the FULL detailed review (markdown).
+             - Also leave inline comments on important lines (at least 3–8 if material changes exist).
+             - Use severity labels on issues: [BLOCKER], [HIGH], [MED], [LOW].
+             - Cite real locations: `path/to/file.ts:L12-L34` or `path::functionName`.
+             - Do NOT invent files or behavior; label assumptions clearly.
+             - NEVER post escaped newlines like `\\n` — use real markdown line breaks.
+             - Prefer: `gh pr comment <N> --body-file - <<'EOF'` ... `EOF` so markdown renders correctly.
+             - Do NOT collapse the review into a short PASS table only — that is insufficient.
 
-            RESPONSE FORMAT (EXACT HEADINGS)
+            DEPTH REQUIREMENT (CRITICAL)
+             - For EVERY portfolio guardrail, write 2–5 sentences explaining HOW it is implemented,
+               WHICH functions/constants enforce it, and WHETHER live vs backtest stay in sync.
+             - For each major changed file, summarize what changed and any residual risk.
+             - Even when approving, explain the reasoning with evidence from the diff.
+
+            RESPONSE FORMAT (EXACT HEADINGS — all sections required)
+
+            ## Executive Summary
+            3–6 sentences: what this PR does, financial risk impact, overall readiness.
+
+            ## Portfolio / Finance Deep Dive
+            For each item below, use this mini-template:
+            **Status:** PASS | FAIL | PARTIAL
+            **Where:** `file:lines` / symbol names
+            **Explanation:** how it works, edge cases, residual risk
+
+            1. Minimum wallet balance / 30% cash reserve before buys
+            2. Whole-share quantities (no decimals) — buys, sells, partial exits, API/UI
+            3. Portfolio reset to ₹1,00,000
+            4. SIP ₹20,000 on fixed IST day (5th), starting subsequent month only
+            5. SIP treated as capital (not P&L)
+            6. Max allocation ₹25,000 per trade
+            7. Max 8 positions = ceiling only (NOT forced fill) — how engine chooses 1 vs 5 vs 8
+            8. Sell penalty ₹150
+            9. Live (`trading.ts`) vs backtest (`backtest.ts`) parity on sizing/exits
+
+            ## File-by-File Analysis
+            Bullet each significant changed file with:
+            - What changed
+            - Correctness notes
+            - Any [BLOCKER]/[HIGH]/[MED]/[LOW] findings with citations
 
             ## Performance
+            For each checkbox: mark [x] or [ ] and write 1–3 sentences of findings (not just empty checks).
             - [ ] Optimisation possibility check
             - [ ] Code redundancy check
             - [ ] Time Taken to Run improvement suggestion
@@ -187,20 +218,20 @@ jobs:
             - [ ] Bug Checks
 
             ## Code Quality
-            - [ ] Code follows our style guide
-            - [ ] No commented-out code
-            - [ ] Meaningful variable names
-            - [ ] DRY principle followed
+            - [ ] Code follows our style guide — explanation
+            - [ ] No commented-out code — explanation
+            - [ ] Meaningful variable names — explanation
+            - [ ] DRY principle followed — explanation
 
             ## Testing
-            - [ ] Unit tests for new functions
-            - [ ] Integration tests for new endpoints
-            - [ ] Edge cases covered
-            - [ ] Test coverage > 80%
+            - [ ] Unit tests for new functions — what exists / gaps
+            - [ ] Integration tests for new endpoints — what exists / gaps
+            - [ ] Edge cases covered — list key cases
+            - [ ] Test coverage adequate — assessment
 
             ## Documentation
             - [ ] README updated if needed
-            - [ ] API docs updated
+            - [ ] API / ops docs updated
             - [ ] Inline comments for complex logic
             - [ ] CHANGELOG.md updated
 
@@ -210,6 +241,9 @@ jobs:
             - [ ] Proper error handling
             - [ ] No sensitive data in logs
 
+            ### Residual Risks / Follow-ups
+            Bulleted list (even if APPROVE). If none: state "None material."
+
             ### Final Verdict
             Choose exactly one:
             APPROVE — no critical issues; ready to merge
@@ -217,8 +251,7 @@ jobs:
             COMMENT — no blockers, but non-trivial suggestions
 
             If REQUEST CHANGES: list the minimum set of fixes required for approval (bulleted).
-            Provide detailed feedback using inline comments for specific issues.
-            Use top-level comments for general observations and suggestions. Only provide actionable insights. Avoid general praise and focus on constructive criticism.
+            Always end the PR comment with a short "How to re-run" note pointing at this Actions job URL if available.
 
           claude_args: |
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh api:*)"

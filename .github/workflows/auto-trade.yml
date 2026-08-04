@@ -1,0 +1,42 @@
+name: Auto-Trade (market hours)
+
+# Runs one auto-trade cycle about every 15 minutes during NSE session.
+# NSE 9:15–15:30 IST ≈ 03:45–10:00 UTC, Mon–Fri.
+on:
+  schedule:
+    - cron: '45 3 * * 1-5'       # 9:15 IST
+    - cron: '*/15 4-9 * * 1-5'   # every 15 min, 9:30 IST – 15:15 IST
+    - cron: '0 10 * * 1-5'       # 15:30 IST
+  workflow_dispatch:
+
+jobs:
+  trade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Run one auto-trade cycle
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
+          NEXT_PUBLIC_SCANNER_URL: ${{ secrets.NEXT_PUBLIC_SCANNER_URL }}
+          SCANNER_PORT: '8000'
+        run: npx tsx --tsconfig tsconfig.json scripts/ci/run-autotrade-once.ts

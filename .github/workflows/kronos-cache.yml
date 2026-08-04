@@ -1,0 +1,47 @@
+name: Kronos AI Forecast Cache
+
+on:
+  schedule:
+    # 6:30 AM IST = 1:00 UTC, Mon–Fri
+    - cron: '0 1 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  kronos:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Sync deps + CPU torch (Linux)
+        run: |
+          # pyproject may pin a Windows local wheel — install Linux CPU torch from PyTorch index
+          uv sync --no-install-package torch
+          uv pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Refresh Kronos cache
+        env:
+          HF_HOME: ${{ github.workspace }}/.cache/huggingface
+        run: |
+          uv run --no-sync --directory scanner python -c "
+          import asyncio
+          from scheduler import run_daily_kronos_cache
+          asyncio.run(run_daily_kronos_cache())
+          "
+
+      - name: Upload scanner DB artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kronos-tauric-db-${{ github.run_id }}
+          path: scanner/tauric.db
+          if-no-files-found: ignore
+          retention-days: 14

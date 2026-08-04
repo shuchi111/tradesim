@@ -1,0 +1,60 @@
+name: Tauric Daily Scan
+
+on:
+  schedule:
+    # 9:00 AM IST = 3:30 UTC, Mon–Fri (after Kronos cache at 6:30 AM)
+    - cron: '30 3 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Require LLM secrets (AI scoring M7)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+        run: |
+          KEY="${ANTHROPIC_API_KEY:-$LLM_API_KEY}"
+          if [ -z "$KEY" ]; then
+            echo "::error::Daily scan requires AI scoring. Set secret ANTHROPIC_API_KEY (or LLM_API_KEY)."
+            exit 1
+          fi
+          echo "LLM API key is set"
+
+      - name: Sync scanner deps (skip torch)
+        run: uv sync --no-install-package torch
+
+      - name: Run daily scan with AI scoring
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
+        run: |
+          # Defaults if optional secrets omitted
+          export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-$LLM_API_KEY}"
+          export ANTHROPIC_BASE_URL="${ANTHROPIC_BASE_URL:-${LLM_BASE_URL:-https://api.z.ai/api/anthropic}}"
+          export LLM_MODEL="${LLM_MODEL:-glm-5.1}"
+          uv run --no-sync --directory scanner python ci_run_daily_scan.py
+
+      - name: Upload scanner DB artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tauric-db-${{ github.run_id }}
+          path: scanner/tauric.db
+          if-no-files-found: ignore
+          retention-days: 14

@@ -1,5 +1,4 @@
 import { PrismaClient } from '@prisma/client'
-<<<<<<< HEAD
 import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 
 const adapter = new PrismaBetterSqlite3({
@@ -8,11 +7,19 @@ const adapter = new PrismaBetterSqlite3({
 const prisma = new PrismaClient({ adapter })
 
 const STARTING_BALANCE = 100000 // ₹1,00,000 (1 Lakh INR)
-=======
-import { STARTING_BALANCE_INR } from './seed-data'
 
-const prisma = new PrismaClient()
->>>>>>> 4f995f654159cdd8ee57d0b8d7da1593ae3aecc3
+function firstOfNextIstMonth(from: Date = new Date()): Date {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+  }).formatToParts(from)
+  const year = Number(parts.find((p) => p.type === 'year')?.value)
+  const month = Number(parts.find((p) => p.type === 'month')?.value)
+  const nextYear = month === 12 ? year + 1 : year
+  const nextMonth = month === 12 ? 1 : month + 1
+  return new Date(Date.UTC(nextYear, nextMonth - 1, 1, 6, 30, 0))
+}
 
 async function main() {
   await prisma.account.upsert({
@@ -20,26 +27,23 @@ async function main() {
     update: {},
     create: {
       id: 1,
-      balance: STARTING_BALANCE_INR,
-      startingEquity: STARTING_BALANCE_INR,
+      balance: STARTING_BALANCE,
+      startingEquity: STARTING_BALANCE,
       sipAmountInr: 20000,
+      sipDayOfMonth: 5,
+      sipEligibleFrom: firstOfNextIstMonth(),
     },
   })
-<<<<<<< HEAD
-=======
 
->>>>>>> 4f995f654159cdd8ee57d0b8d7da1593ae3aecc3
   await prisma.autoTradeConfig.upsert({
     where: { id: 1 },
     update: {},
     create: { id: 1, enabled: false },
   })
-<<<<<<< HEAD
-  console.log(`Seed complete: account ₹${STARTING_BALANCE.toLocaleString('en-IN')} + auto-trade config ready`)
-=======
 
-  console.log(`Seed complete: account created with ₹${STARTING_BALANCE_INR.toLocaleString('en-IN')} balance + auto-trade config ready`)
->>>>>>> 4f995f654159cdd8ee57d0b8d7da1593ae3aecc3
+  console.log(
+    `Seed complete: account ₹${STARTING_BALANCE.toLocaleString('en-IN')} + auto-trade config ready`
+  )
 }
 
 main()

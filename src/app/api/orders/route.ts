@@ -22,22 +22,29 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const { symbol, side, type, quantity, price } = body
 
-    if (!symbol || !side || !type || !quantity) {
+    if (!symbol || !side || !type || quantity == null) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    if (quantity <= 0) {
+    const qty = Number(quantity)
+    if (!Number.isFinite(qty) || qty <= 0) {
       return NextResponse.json({ error: 'Quantity must be positive' }, { status: 400 })
+    }
+    if (!Number.isInteger(qty)) {
+      return NextResponse.json(
+        { error: 'Fractional quantities are not allowed — use whole shares only' },
+        { status: 400 }
+      )
     }
 
     if (type === 'market') {
-      const result = await processMarketOrder(symbol, side, quantity)
+      const result = await processMarketOrder(symbol, side, qty)
       return NextResponse.json({ data: result })
     } else if (type === 'limit') {
       if (!price || price <= 0) {
         return NextResponse.json({ error: 'Limit price required' }, { status: 400 })
       }
-      const result = await processLimitOrder(symbol, side, quantity, price)
+      const result = await processLimitOrder(symbol, side, qty, price)
       return NextResponse.json({ data: result })
     } else {
       return NextResponse.json({ error: 'Invalid order type' }, { status: 400 })

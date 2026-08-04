@@ -1,6 +1,11 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { ensureAccount, getMarketPrice } from '@/lib/trading'
+import {
+  ensureAccount,
+  getMarketPrice,
+  resetPortfolio,
+  SIP_DAY_OF_MONTH,
+} from '@/lib/trading'
 
 export async function GET() {
   try {
@@ -43,11 +48,40 @@ export async function GET() {
         unrealizedPnl,
         unrealizedPnlInr: unrealizedPnl,
         sipAmountInr: account.sipAmountInr,
+        sipDayOfMonth: account.sipDayOfMonth ?? SIP_DAY_OF_MONTH,
+        sipEligibleFrom: account.sipEligibleFrom,
         lastSipDate: account.lastSipDate,
         totalDeposited,
+        cashReservePct: 0.3,
+        maxAllocationPerTrade: 25000,
       },
     })
   } catch {
     return NextResponse.json({ error: 'Failed to fetch account data' }, { status: 500 })
+  }
+}
+
+/** POST { action: "reset" } — reset to ₹1L and schedule SIP from next month. */
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json().catch(() => ({}))
+    if (body?.action !== 'reset') {
+      return NextResponse.json(
+        { error: 'Unsupported action. Use { "action": "reset" }.' },
+        { status: 400 }
+      )
+    }
+
+    const result = await resetPortfolio()
+    return NextResponse.json({
+      data: {
+        ...result,
+        message:
+          'Portfolio reset to ₹1,00,000. Open positions cleared. SIP starts on the 5th of next month.',
+      },
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to reset portfolio'
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }

@@ -10,6 +10,9 @@
     "seed": "npx tsx prisma/seed.ts",
     "test": "vitest run",
     "autotrade": "npx tsx --env-file=.env src/scripts/auto-trade-loop.ts",
+    "db:migrate-turso": "npx tsx --env-file=.env scripts/migrate-turso-sip-columns.ts",
+    "db:reset-portfolio": "npx tsx --env-file=.env scripts/reset-portfolio.ts",
+    "pr:review": "npx tsx scripts/ci/pr-quant-review.ts",
     "scanner": "uv run --no-sync --project . --directory scanner python main.py",
     "scanner:sync": "uv sync",
     "postinstall": "node scripts/copy-lightningcss-native.js"

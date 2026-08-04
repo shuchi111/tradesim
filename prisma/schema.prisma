@@ -1,0 +1,322 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Account {
+  id              Int      @id @default(1)
+  balance         Float    @default(100000)
+  startingEquity  Float    @default(100000)
+  totalDeposited  Float    @default(0)  // cumulative SIP deposits
+  createdAt       DateTime @default(now())
+  lastSipDate     DateTime?
+  sipAmountInr    Float    @default(20000)
+
+  @@map("accounts")
+}
+
+model Order {
+  id        Int      @id @default(autoincrement())
+  symbol    String
+  side      String
+  type      String
+  price     Float
+  quantity  Float
+  status    String   @default("pending")
+  createdAt DateTime @default(now())
+
+  @@map("orders")
+}
+
+model Trade {
+  id        Int      @id @default(autoincrement())
+  orderId   Int?
+  symbol    String
+  side      String
+  price     Float
+  quantity  Float
+  createdAt DateTime @default(now())
+
+  @@map("trades")
+}
+
+model Position {
+  id         Int      @id @default(autoincrement())
+  symbol     String   @unique
+  side       String
+  entryPrice Float
+  quantity   Float
+  peakPrice  Float    @default(0)
+  troughPrice Float   @default(0)
+  partialExitTaken Boolean @default(false)
+  createdAt  DateTime @default(now())
+
+  @@map("positions")
+}
+
+model CustomStrategyTrade {
+  id          Int      @id @default(autoincrement())
+  symbol      String
+  side        String
+  entryPrice  Float
+  exitPrice   Float
+  quantity    Float
+  pnl         Float
+  pnlPct      Float    @default(0)
+  openedAt    DateTime
+  closedAt    DateTime @default(now())
+
+  // Trade transparency fields
+  exitReason    String?  // "trailing_stop" | "stop_loss" | "take_profit" | "signal_sell" | "manual"
+  exitDetails   Json?    // Full context at exit
+  entryReason   String?  // "confluence" | "momentum" | "mean_reversion" | "ema_cross" | "consensus" | "kronos" | "manual"
+  entryDetails  Json?    // Full context at entry
+  maxFavorable  Float?   // Maximum profit reached (MFE %)
+  maxAdverse    Float?   // Maximum loss reached (MAE %)
+  holdDuration  Int?     // Minutes position was held
+
+  @@map("custom_strategy_trades")
+}
+
+model TrailingStopEvent {
+  id            Int      @id @default(autoincrement())
+  tradeId       Int?
+  symbol        String
+  eventType     String   // "peak_update" | "trailing_trigger" | "stop_loss_trigger" | "take_profit_trigger" | "signal_exit" | "entry"
+  entryPrice    Float
+  currentPrice  Float
+  peakPrice     Float
+  pnlPct        Float
+  peakGainPct   Float
+  triggerReason String
+  timestamp     DateTime @default(now())
+  metadata      Json?
+
+  @@index([symbol])
+  @@index([eventType])
+  @@map("trailing_stop_events")
+}
+
+model DailyReport {
+  id              Int      @id @default(autoincrement())
+  reportDate      DateTime @unique
+  startingEquity  Float
+  endingEquity    Float
+  dailyPnl        Float
+  dailyPnlPct     Float
+  tradesCount     Int
+  winRate         Float
+  metrics         Json     // Sharpe, drawdown, profit factor, etc.
+  tradesData      Json     // Full trade-level data for the day
+  riskEvents      Json     // All risk triggers
+  summary         String?  // Executive summary text
+  topWinners      Json?    // Top 3 winning trades
+  topLosers       Json?    // Top 3 losing trades
+  openPositions   Json?    // Snapshot of open positions at report time
+  createdAt       DateTime @default(now())
+
+  @@map("daily_reports")
+}
+
+model Notification {
+  id        Int      @id @default(autoincrement())
+  type      String   // "trade_open" | "trade_close" | "risk_event" | "system" | "report"
+  symbol    String?
+  title     String
+  message   String
+  severity  String   @default("info") // "info" | "success" | "warning" | "danger"
+  isRead    Boolean  @default(false)
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([isRead])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+model Backtest {
+  id              Int      @id @default(autoincrement())
+  name            String
+  startDate       DateTime
+  endDate         DateTime
+  symbols         String   // JSON array of tickers
+  startingCapital Float    @default(100000)
+  finalEquity     Float
+  totalReturnPct  Float
+  totalTrades     Int
+  winRate         Float
+  sharpeRatio     Float?
+  maxDrawdownPct  Float
+  profitFactor    Float
+  avgWinPct       Float
+  avgLossPct      Float
+  avgHoldDays     Float
+  equityCurve     Json     // [{date, equity}]
+  strategyStats   Json     // per-strategy breakdown
+  trades          BacktestTrade[]
+  createdAt       DateTime @default(now())
+
+  @@map("backtests")
+}
+
+model BacktestTrade {
+  id           Int      @id @default(autoincrement())
+  backtestId   Int
+  backtest     Backtest @relation(fields: [backtestId], references: [id], onDelete: Cascade)
+  symbol       String
+  side         String
+  entryDate    DateTime
+  exitDate     DateTime?
+  entryPrice   Float
+  exitPrice    Float?
+  quantity     Float
+  pnl          Float?
+  pnlPct       Float?
+  exitReason   String?
+  entryReason  String?
+  strategy     String?
+  maxFavorable Float?
+  maxAdverse   Float?
+
+  @@index([backtestId])
+  @@map("backtest_trades")
+}
+
+model AutoTradeConfig {
+  id        Int      @id @default(1)
+  enabled   Boolean  @default(false)
+  updatedAt DateTime @default(now())
+
+  @@map("auto_trade_config")
+}
+
+model AgentAnalysis {
+  id                 Int       @id @default(autoincrement())
+  taskId             String?   @unique
+  ticker             String
+  tradeDate          String
+  status             String    @default("queued")
+  signal             String?
+  confidence         Float?
+  sizeFraction       Float?
+  targetPrice        Float?
+  stopLoss           Float?
+  finalTradeDecision String?
+  agentReports       Json?
+  recommendation     Json?
+  error              String?
+  progress           String?
+  startedAt          DateTime?
+  completedAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@unique([ticker, tradeDate])
+  @@index([ticker])
+  @@index([status])
+  @@index([createdAt])
+  @@map("agent_analyses")
+}
+
+model ForecastCache {
+  id          Int       @id @default(autoincrement())
+  symbol      String
+  horizon     Int       @default(10)
+  interval    String    @default("1d")
+  sampleCount Int       @default(5)
+  forecast    Json
+  generatedAt DateTime  @default(now())
+  expiresAt   DateTime?
+
+  @@unique([symbol, horizon, interval])
+  @@index([symbol])
+  @@map("forecast_cache")
+}
+
+model ScannerScan {
+  id          Int      @id @default(autoincrement())
+  scanDate    DateTime
+  scanDateKey String?
+  regime      String?
+  vix         Float?
+  picks       Json
+  methodStats Json?
+  rawResult   Json?
+  createdAt   DateTime @default(now())
+
+  @@index([scanDate])
+  @@index([scanDateKey])
+  @@map("scanner_scans")
+}
+
+model AutoTradeRun {
+  id         Int      @id @default(autoincrement())
+  ranAt      DateTime @default(now())
+  enabled    Boolean
+  marketOpen Boolean
+  positions  Int?
+  signals    Json?
+  actions    Json?
+  errors     Json?
+  durationMs Int?
+
+  @@index([ranAt])
+  @@map("auto_trade_runs")
+}
+
+model MarketSnapshot {
+  id         Int      @id @default(autoincrement())
+  snapshotAt DateTime @default(now())
+  nifty      Float?
+  vix        Float?
+  regime     String?
+  fiiDii     Json?
+  context    Json
+
+  @@index([snapshotAt])
+  @@map("market_snapshots")
+}
+
+model StrategyPerf {
+  id            Int      @id @default(autoincrement())
+  strategyName  String   @unique
+  winRate       Float    @default(50)
+  avgPnlPct     Float    @default(0)
+  totalTrades   Int      @default(0)
+  wins          Int      @default(0)
+  losses        Int      @default(0)
+  backtestId    Int?
+  backtestName  String?
+  updatedAt     DateTime @default(now())
+
+  @@map("strategy_perf")
+}
+
+model RiskSnapshot {
+  id             Int      @id @default(autoincrement())
+  snapshotDate   DateTime
+  totalEquity    Float
+  cashAvailable  Float
+  positionsCount Int
+  positionsValue Float
+  dailyPnl       Float
+  drawdownPct    Float
+  createdAt      DateTime @default(now())
+
+  @@map("risk_snapshots")
+}
+
+model ScanResult {
+  id        Int      @id @default(autoincrement())
+  symbol    String
+  score     Float
+  signal    String
+  details   Json?
+  createdAt DateTime @default(now())
+
+  @@index([symbol])
+  @@map("scan_results")
+}

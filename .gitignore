@@ -1,0 +1,89 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# next.js
+/.next/
+/out/
+/build
+next-env.d.ts
+*.tsbuildinfo
+
+# test / coverage
+/coverage
+/playwright-report
+/test-results
+
+# env / secrets
+.env
+.env*.local
+*.local
+*.pem
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# vercel / turbo
+.vercel
+.turbo
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# other IDEs / agent workspaces (not used — Cursor uses .cursor/)
+.agents/
+.claude/
+.windsurf/
+.drytis/
+.playwright-mcp/
+skills-lock.json
+AGENTS.md
+CLAUDE.md
+.cursor
+
+# local data dumps / exports
+/data_export/
+/userDocs/
+/docs/
+/migration/
+*.csv
+tmp_*.ts
+
+# UI/test screenshots (local captures)
+/*.png
+/forecast-*.png
+/kronos-*.png
+/step*.png
+/home-tab.png
+/scan-*.png
+
+# python / scanner runtime
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.db
+*.sqlite
+*.sqlite3
+.venv/
+venv/
+.wheels/
+wheels/*.whl
+scanner/.venv/
+scanner/agent_results/
+scanner/**/__pycache__/
+
+# generated Turso bootstrap SQL (recreate via migrate diff)
+prisma/turso-init.sql
+
+# HuggingFace / model download caches
+.cache/
+**/huggingface/
+scanner/wheels/

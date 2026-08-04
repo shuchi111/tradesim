@@ -12,17 +12,17 @@ describe('P&L Calculation', () => {
   }
 
   it('calculates positive P&L when price goes up', () => {
-    const pnl = calcPnl(60000, 65000, 0.5)
-    expect(pnl).toBe(2500) // (65000-60000) * 0.5 = 2500
+    const pnl = calcPnl(600, 650, 10)
+    expect(pnl).toBe(500)
   })
 
   it('calculates negative P&L when price goes down', () => {
-    const pnl = calcPnl(60000, 55000, 0.5)
-    expect(pnl).toBe(-2500)
+    const pnl = calcPnl(600, 550, 10)
+    expect(pnl).toBe(-500)
   })
 
   it('calculates zero P&L when price unchanged', () => {
-    const pnl = calcPnl(60000, 60000, 0.5)
+    const pnl = calcPnl(600, 600, 10)
     expect(pnl).toBe(0)
   })
 
@@ -30,10 +30,25 @@ describe('P&L Calculation', () => {
     const pnl = calcPnl(100, 120, 10)
     expect(pnl).toBe(200)
   })
+})
 
-  it('calculates P&L with small fractional quantity', () => {
-    const pnl = calcPnl(50000, 51000, 0.001)
-    expect(pnl).toBe(1) // 1000 * 0.001 = 1
+describe('Whole-share quantity rules', () => {
+  function requireWholeShares(quantity: number): number {
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      throw new Error('Quantity must be a positive whole number')
+    }
+    if (!Number.isInteger(quantity)) {
+      throw new Error('Fractional quantities are not allowed')
+    }
+    return quantity
+  }
+
+  it('accepts integer quantities', () => {
+    expect(requireWholeShares(5)).toBe(5)
+  })
+
+  it('rejects fractional quantities', () => {
+    expect(() => requireWholeShares(1.5)).toThrow(/Fractional/)
   })
 })
 
@@ -49,19 +64,18 @@ describe('Average Entry Price', () => {
   }
 
   it('calculates weighted average for two buys at different prices', () => {
-    const avg = calcAvgEntry(1, 60000, 1, 62000)
-    expect(avg).toBe(61000) // (60000 + 62000) / 2
+    const avg = calcAvgEntry(1, 600, 1, 620)
+    expect(avg).toBe(610)
   })
 
   it('weights larger position more', () => {
-    const avg = calcAvgEntry(0.9, 60000, 0.1, 70000)
-    expect(avg).toBe(61000) // (60000*0.9 + 70000*0.1) = 61000
+    const avg = calcAvgEntry(9, 600, 1, 700)
+    expect(avg).toBe(610)
   })
 
   it('updates entry when adding to existing position', () => {
-    // Buy 0.5 at $60k, then buy 0.5 at $64k
-    const avg1 = calcAvgEntry(0.5, 60000, 0.5, 64000)
-    expect(avg1).toBe(62000)
+    const avg1 = calcAvgEntry(5, 600, 5, 640)
+    expect(avg1).toBe(620)
   })
 })
 
@@ -70,12 +84,12 @@ describe('Order Value', () => {
     return price * quantity
   }
 
-  it('calculates order value for BTC', () => {
-    expect(calcOrderValue(60000, 0.1)).toBe(6000)
+  it('calculates order value for equity shares', () => {
+    expect(calcOrderValue(2500, 4)).toBe(10000)
   })
 
-  it('calculates order value for DOGE', () => {
-    expect(calcOrderValue(0.07, 1000)).toBe(70)
+  it('calculates order value for cheaper names', () => {
+    expect(calcOrderValue(70, 100)).toBe(7000)
   })
 })
 
@@ -112,23 +126,24 @@ describe('Limit Order Fill Logic', () => {
 describe('Balance Update', () => {
   it('buy decreases balance by cost', () => {
     const balance = 100000
-    const cost = 60000 * 0.1
+    const cost = 2500 * 4
     const newBalance = balance - cost
-    expect(newBalance).toBe(94000)
+    expect(newBalance).toBe(90000)
   })
 
   it('sell increases balance by proceeds', () => {
-    const balance = 94000
-    const proceeds = 62000 * 0.1
+    const balance = 90000
+    const proceeds = 2600 * 4
     const newBalance = balance + proceeds
-    expect(newBalance).toBe(100200) // 200 profit
+    expect(newBalance).toBe(100400)
   })
 
-  it('partial sell reduces position quantity', () => {
-    const existingQty = 0.5
-    const sellQty = 0.3
+  it('partial sell uses whole shares', () => {
+    const existingQty = 5
+    const sellQty = Math.floor(existingQty / 2)
     const remaining = existingQty - sellQty
-    expect(remaining).toBe(0.2)
+    expect(sellQty).toBe(2)
+    expect(remaining).toBe(3)
   })
 })
 

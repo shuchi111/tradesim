@@ -251,6 +251,24 @@ describe('Per-Strategy Statistics', () => {
 })
 
 describe('Position Sizing Logic', () => {
+  const MAX_ALLOCATION_PER_TRADE = 25_000
+
+  function sizeWholeShares(
+    equity: number,
+    confidence: number,
+    investable: number,
+    price: number
+  ): { qty: number; cost: number } {
+    let allocationPct = 0.04
+    if (confidence >= 90) allocationPct = 0.08
+    else if (confidence >= 80) allocationPct = 0.06
+    const capped = Math.min(equity * allocationPct, investable, MAX_ALLOCATION_PER_TRADE)
+    if (capped < 100 || price <= 0) return { qty: 0, cost: 0 }
+    const qty = Math.floor(capped / price)
+    if (qty < 1) return { qty: 0, cost: 0 }
+    return { qty, cost: qty * price }
+  }
+
   it('should allocate 8% for 90%+ confidence', () => {
     const confidence = 92
     let allocationPct = 0.04
@@ -273,6 +291,19 @@ describe('Position Sizing Logic', () => {
     if (confidence >= 90) allocationPct = 0.08
     else if (confidence >= 80) allocationPct = 0.06
     expect(allocationPct).toBe(0.04)
+  })
+
+  it('uses whole shares only', () => {
+    const { qty, cost } = sizeWholeShares(100_000, 92, 70_000, 1500)
+    expect(Number.isInteger(qty)).toBe(true)
+    expect(qty).toBe(Math.floor(8000 / 1500))
+    expect(cost).toBe(qty * 1500)
+  })
+
+  it('caps allocation at ₹25,000', () => {
+    const { qty, cost } = sizeWholeShares(1_000_000, 95, 500_000, 100)
+    expect(cost).toBeLessThanOrEqual(MAX_ALLOCATION_PER_TRADE)
+    expect(qty).toBe(250)
   })
 })
 

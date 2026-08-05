@@ -22,7 +22,11 @@ dependencies = [
 [tool.uv]
 package = false
 
-# Use the local CPU wheel (already downloaded) so sync is fast and offline-friendly.
-# Re-download once with curl if missing, then point here.
+# CPU builds for Windows/Linux/macOS (GitHub Actions is Linux — do not pin a local win_amd64 wheel).
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
 [tool.uv.sources]
-torch = { path = "wheels/torch-2.13.0+cpu-cp312-cp312-win_amd64.whl" }
+torch = { index = "pytorch-cpu" }

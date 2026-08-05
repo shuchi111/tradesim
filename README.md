@@ -45,24 +45,14 @@ npm run scanner:sync
 # same as: uv sync
 ```
 
-**Torch (CPU wheel)** is required for Kronos forecasts. The project expects:
+**Torch (CPU)** is required for Kronos forecasts. `pyproject.toml` pulls it from the [PyTorch CPU index](https://download.pytorch.org/whl/cpu) (works on Windows and Linux CI).
 
-```text
-wheels/torch-2.13.0+cpu-cp312-cp312-win_amd64.whl
-```
-
-If that file is missing (gitignored / large), download once then sync:
-
-```powershell
-# From tradesim/
-New-Item -ItemType Directory -Force -Path wheels | Out-Null
-curl.exe -L --retry 5 --continue-at - -o wheels/torch-2.13.0+cpu-cp312-cp312-win_amd64.whl `
-  "https://download.pytorch.org/whl/cpu/torch-2.13.0%2Bcpu-cp312-cp312-win_amd64.whl"
-
+```bash
 npm run scanner:sync
+# same as: uv sync
 ```
 
-On non-Windows, change the wheel URL/filename to match your platform, or point `[tool.uv.sources].torch` in `pyproject.toml` at the [PyTorch CPU index](https://download.pytorch.org/whl/cpu).
+Optional: cache a local wheel under `wheels/` for offline installs; CI does not use that path.
 
 ### Run the scanner
 
@@ -182,7 +172,7 @@ Local-only (gitignored): `docs/`, `migration/`, `.venv/`, `wheels/*.whl`.
 | `Cannot find module '.prisma/client/default'` | `npx prisma generate` |
 | `better-sqlite3` / `node-gyp` / missing Visual Studio | Use **Node 22 LTS**, then reinstall (`rm -rf node_modules` → `npm install`) |
 | Forecast: 0 bars / yfinance “delisted” | Ensure `yfinance==1.5.2` via `npm run scanner:sync`; scanner uses Yahoo chart API fallback |
-| Forecast: torch not installed | Place CPU wheel under `wheels/` then `npm run scanner:sync` |
+| Forecast: torch not installed | Run `npm run scanner:sync` (pulls CPU torch from PyTorch index) |
 | `EADDRINUSE` / port 8000 in use | Stop old scanner PID, or set `SCANNER_PORT` |
 | `uv sync` Python 3.11 resolve error for torch wheel | Keep `requires-python = ">=3.12,<3.13"` and Python 3.12 |
 

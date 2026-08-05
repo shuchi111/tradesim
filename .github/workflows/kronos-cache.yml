@@ -22,10 +22,7 @@ jobs:
           python-version: '3.12'
 
       - name: Sync deps + CPU torch (Linux)
-        run: |
-          # pyproject may pin a Windows local wheel — install Linux CPU torch from PyTorch index
-          uv sync --no-install-package torch
-          uv pip install torch --index-url https://download.pytorch.org/whl/cpu
+        run: uv sync
 
       - name: Refresh Kronos cache
         env:

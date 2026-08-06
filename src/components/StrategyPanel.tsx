@@ -6,6 +6,7 @@ import { useCurrency } from '@/lib/currency'
 
 interface StrategyPanelProps {
   onTradeComplete: () => void
+  refreshKey?: number
 }
 
 interface RiskStatus {
@@ -34,7 +35,7 @@ interface AutoTradeResult {
   pnlPct?: number
 }
 
-export default function StrategyPanel({ onTradeComplete }: StrategyPanelProps) {
+export default function StrategyPanel({ onTradeComplete, refreshKey = 0 }: StrategyPanelProps) {
   const { fmt, convert, symbol } = useCurrency()
   const [signals, setSignals] = useState<StrategySignal[]>([])
   const [autoTrading, setAutoTrading] = useState(false)
@@ -92,7 +93,7 @@ export default function StrategyPanel({ onTradeComplete }: StrategyPanelProps) {
       clearInterval(riskInterval)
       clearInterval(statusInterval)
     }
-  }, [fetchSignals, fetchRisk, fetchAutoStatus])
+  }, [fetchSignals, fetchRisk, fetchAutoStatus, refreshKey])
 
   // Toggle auto-trade via server API (persists in DB, server-side loop reads it)
   const toggleAuto = useCallback(async () => {

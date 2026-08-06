@@ -70,8 +70,12 @@ interface ForecastResponse {
   interval: string
   historical: HistoricalCandle[]
   forecast: ForecastCandle[]
-  sample_paths: PathPoint[][]
+  sample_paths?: PathPoint[][]
   metadata: ForecastMetadata
+  cached?: boolean
+  cached_at?: string
+  cached_at_display?: string
+  source?: string
 }
 
 const HORIZON_OPTIONS_DAILY = [5, 10, 20]
@@ -85,14 +89,28 @@ type IntervalMode = '1d' | '1h'
 // Component
 // ---------------------------------------------------------------------------
 
-export default function ForecastTab({ symbol: initialSymbol }: { symbol: string }) {
-  const [symbol, setSymbol] = useState(initialSymbol)
+export default function ForecastTab({
+  symbol: initialSymbol,
+  refreshKey = 0,
+}: {
+  symbol: string
+  refreshKey?: number
+}) {
+  // Prefer a cacheable equity when header is on NIFTY50 (Kronos cron caches .NS stocks)
+  const defaultSymbol =
+    initialSymbol === 'NIFTY50'
+      ? (INSTRUMENTS.find((i) => i.currency === 'INR' && i.symbol !== 'NIFTY50')?.symbol || initialSymbol)
+      : initialSymbol
+
+  const [symbol, setSymbol] = useState(defaultSymbol)
   const [horizon, setHorizon] = useState(10)
   const [interval, setInterval] = useState<IntervalMode>('1d')
   const [viewMode, setViewMode] = useState<ViewMode>('probabilistic')
   const [loading, setLoading] = useState(false)
+  const [loadingCached, setLoadingCached] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [data, setData] = useState<ForecastResponse | null>(null)
+  const [cacheLabel, setCacheLabel] = useState<string | null>(null)
 
   const chartContainerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
@@ -202,7 +220,8 @@ export default function ForecastTab({ symbol: initialSymbol }: { symbol: string 
       })
       // Individual sample paths — thin semi-transparent orange lines (Monte Carlo fan)
       if (data) {
-        for (let i = 0; i < data.sample_paths.length; i++) {
+        const paths = data.sample_paths || []
+        for (let i = 0; i < paths.length; i++) {
           const pathSeries = chart.addSeries(LineSeries, {
             color: 'rgba(251, 146, 60, 0.18)',
             lineWidth: 1,
@@ -258,10 +277,13 @@ export default function ForecastTab({ symbol: initialSymbol }: { symbol: string 
         histSlice.map((k) => ({ time: k.time as UTCTimestamp, value: k.close }))
       )
       // Sample paths (Monte Carlo fan)
+      const paths = d.sample_paths || []
       pathSeriesRefs.current.forEach((series, i) => {
-        series.setData(
-          d.sample_paths[i].map((p) => ({ time: p.time as UTCTimestamp, value: p.value }))
-        )
+        if (paths[i]) {
+          series.setData(
+            paths[i].map((p) => ({ time: p.time as UTCTimestamp, value: p.value }))
+          )
+        }
       })
       // Forecast median (orange)
       medianLineRef.current?.setData(
@@ -286,15 +308,75 @@ export default function ForecastTab({ symbol: initialSymbol }: { symbol: string 
     }
   }, [viewMode, data, buildSeries, populateChart])
 
-  // --- Forecast fetching ---
+  const yahooForSymbol = useCallback((sym: string) => {
+    const instrument = INSTRUMENTS.find((i) => i.symbol === sym)
+    return instrument?.yahooSymbol || sym
+  }, [])
+
+  /** Auto-load morning Kronos cache (Turso / scanner) — no live model run. */
+  const loadCachedForecast = useCallback(async () => {
+    setLoadingCached(true)
+    setError(null)
+
+    const yahooSymbol = yahooForSymbol(symbol)
+    const h = interval === '1h' ? HORIZON_HOURLY : horizon
+    const params = new URLSearchParams({
+      horizon: String(h),
+      interval,
+    })
+
+    try {
+      const pathSymbol = encodeURIComponent(decodeURIComponent(yahooSymbol))
+      const res = await fetch(`/api/forecast/cached/${pathSymbol}?${params}`)
+      if (!res.ok) {
+        setData(null)
+        setCacheLabel(null)
+        return
+      }
+      const json = (await res.json()) as ForecastResponse
+      if (!json.historical || !json.forecast || !json.metadata) {
+        setData(null)
+        setCacheLabel(null)
+        return
+      }
+      setData({
+        ...json,
+        sample_paths: Array.isArray(json.sample_paths) ? json.sample_paths : [],
+      })
+      setCacheLabel(
+        json.cached_at_display
+          ? `Cached · ${json.cached_at_display}`
+          : json.cached
+            ? 'Cached forecast'
+            : null
+      )
+    } catch {
+      setData(null)
+      setCacheLabel(null)
+    } finally {
+      setLoadingCached(false)
+    }
+  }, [symbol, horizon, interval, yahooForSymbol])
+
+  // Auto-load cache on mount, symbol/horizon change, and after cron refreshKey
+  useEffect(() => {
+    loadCachedForecast()
+  }, [loadCachedForecast, refreshKey])
+
+  // Sync header symbol when parent changes (skip NIFTY50 → keep equity default)
+  useEffect(() => {
+    if (initialSymbol && initialSymbol !== 'NIFTY50') {
+      setSymbol(initialSymbol)
+    }
+  }, [initialSymbol])
+
+  // --- Live forecast (Generate / Regenerate) ---
   const runForecast = useCallback(async () => {
     setLoading(true)
     setError(null)
+    setCacheLabel(null)
 
-    // Get the Yahoo Finance symbol. yahooSymbol values are already URL-encoded
-    // where needed (e.g. '%5ENSEI' for ^NSEI), so pass them raw.
-    const instrument = INSTRUMENTS.find((i) => i.symbol === symbol)
-    const yahooSymbol = instrument?.yahooSymbol || symbol
+    const yahooSymbol = yahooForSymbol(symbol)
 
     try {
       const params = new URLSearchParams({ sample_count: '5' })
@@ -305,8 +387,6 @@ export default function ForecastTab({ symbol: initialSymbol }: { symbol: string 
         params.set('horizon', String(horizon))
         params.set('interval', '1d')
       }
-      // Hit the scanner directly (avoids Next.js rewrite proxy timeouts on long Kronos runs).
-      // CORS is open on the FastAPI scanner. Fall back to rewrite path if env unset.
       const scannerBase = (process.env.NEXT_PUBLIC_SCANNER_URL || 'http://localhost:8000').replace(/\/$/, '')
       const pathSymbol = encodeURIComponent(decodeURIComponent(yahooSymbol))
       const res = await fetch(`${scannerBase}/api/forecast/${pathSymbol}?${params}`)
@@ -323,15 +403,12 @@ export default function ForecastTab({ symbol: initialSymbol }: { symbol: string 
       }
       const json: ForecastResponse = await res.json()
       setData(json)
-      // Build series + populate for current view mode
-      buildSeries(viewMode)
-      populateChart(json, viewMode)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Forecast failed')
     } finally {
       setLoading(false)
     }
-  }, [symbol, horizon, interval, viewMode, buildSeries, populateChart])
+  }, [symbol, horizon, interval, yahooForSymbol])
 
   // ---------------------------------------------------------------------------
   // Helpers
@@ -473,11 +550,23 @@ export default function ForecastTab({ symbol: initialSymbol }: { symbol: string 
 
         <button
           onClick={runForecast}
-          disabled={loading}
+          disabled={loading || loadingCached}
           className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {loading ? 'Generating...' : data ? 'Regenerate' : 'Generate Forecast'}
         </button>
+
+        {cacheLabel && !loading && (
+          <span className="rounded bg-emerald-900/40 px-2 py-1 text-xs text-emerald-400">
+            {cacheLabel}
+          </span>
+        )}
+
+        {!data && !loading && !loadingCached && !error && (
+          <span className="text-xs text-slate-500">
+            No cached forecast — run cron or click Generate
+          </span>
+        )}
 
         {data && viewMode === 'probabilistic' && (
           <span className="ml-auto text-xs text-slate-500">
@@ -491,7 +580,7 @@ export default function ForecastTab({ symbol: initialSymbol }: { symbol: string 
         <div ref={chartContainerRef} className="h-full w-full rounded-lg border border-slate-800" />
 
         {/* Legend overlay for probabilistic view */}
-        {data && !loading && viewMode === 'probabilistic' && (
+        {data && !loading && !loadingCached && viewMode === 'probabilistic' && (
           <div className="pointer-events-none absolute left-3 top-3 rounded-lg bg-slate-900/80 px-3 py-2 text-xs">
             <div className="flex items-center gap-2">
               <span className="inline-block h-0.5 w-4" style={{ background: '#3b82f6' }} />
@@ -509,16 +598,20 @@ export default function ForecastTab({ symbol: initialSymbol }: { symbol: string 
         )}
 
         {/* Loading overlay */}
-        {loading && (
+        {(loading || loadingCached) && (
           <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-xl border border-slate-700 bg-slate-900/95 p-6 text-center shadow-2xl">
             <div className="mb-2 text-3xl">🔮</div>
             <div className="mb-1 font-medium text-white">
-              {data ? 'Generating new forecast...' : 'Loading AI model...'}
+              {loading
+                ? (data ? 'Generating new forecast...' : 'Loading AI model...')
+                : 'Loading cached forecast...'}
             </div>
             <div className="text-xs text-slate-400">
-              {data
-                ? `Running ${data.horizon}-${data.interval === '1h' ? 'hour' : 'day'} forecast with 5 Monte Carlo paths`
-                : 'First run downloads model weights (~100MB). This takes 10-30s.'}
+              {loading
+                ? (data
+                  ? `Running ${data.horizon}-${data.interval === '1h' ? 'hour' : 'day'} forecast with 5 Monte Carlo paths`
+                  : 'First run downloads model weights (~100MB). This takes 10-30s.')
+                : 'From morning Kronos cron (Turso cache)'}
             </div>
             <div className="mt-3 inline-block h-2 w-32 overflow-hidden rounded-full bg-slate-700">
               <div className="h-full w-1/2 animate-pulse rounded-full bg-blue-500" />

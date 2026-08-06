@@ -28,7 +28,7 @@ interface RankedItem {
   factors?: ConfidenceResult['factors']
 }
 
-export default function ConfidenceTab() {
+export default function ConfidenceTab({ refreshKey = 0 }: { refreshKey?: number }) {
   const [rankings, setRankings] = useState<RankedItem[]>([])
   const [selected, setSelected] = useState<ConfidenceResult | null>(null)
   const [scanning, setScanning] = useState(false)
@@ -74,7 +74,7 @@ export default function ConfidenceTab() {
 
   useEffect(() => {
     scanAll()
-  }, [scanAll])
+  }, [scanAll, refreshKey])
 
   const handleViewDetail = async (symbol: string) => {
     try {

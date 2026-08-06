@@ -51,6 +51,9 @@ CLAUDE.md
 # CI review output
 /artifacts/
 
+# local ops notes (not for repo)
+CRON-SCHEDULE.md
+
 # local data dumps / exports
 /data_export/
 /userDocs/

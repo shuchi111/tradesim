@@ -36,7 +36,6 @@ jobs:
           echo "LLM API key is set"
           BASE="${ANTHROPIC_BASE_URL:-${LLM_BASE_URL:-https://api.z.ai/api/anthropic}}"
           echo "ANTHROPIC_BASE_URL will resolve to: $BASE"
-          # Turso not required here — scanner uses local scanner/tauric.db (+ artifact upload)
 
       - name: Sync scanner deps (skip torch)
         run: uv sync --no-install-package torch
@@ -54,6 +53,39 @@ jobs:
           export ANTHROPIC_BASE_URL="${ANTHROPIC_BASE_URL:-${LLM_BASE_URL:-https://api.z.ai/api/anthropic}}"
           export LLM_MODEL="${LLM_MODEL:-glm-5.1}"
           uv run --no-sync --directory scanner python ci_run_daily_scan.py
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install Node deps + Prisma
+        run: |
+          npm ci
+          npx prisma generate
+
+      - name: Require Turso for UI sync
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+        run: |
+          if [ -z "$TURSO_DATABASE_URL" ] || [ -z "$TURSO_AUTH_TOKEN" ]; then
+            if [ -z "$DATABASE_URL" ]; then
+              echo "::error::Set TURSO_DATABASE_URL + TURSO_AUTH_TOKEN (preferred) or DATABASE_URL so scan results reach the UI."
+              exit 1
+            fi
+            echo "::warning::Turso secrets missing — falling back to DATABASE_URL only."
+          else
+            echo "Turso secrets are set"
+          fi
+
+      - name: Sync scan → Turso + notify UI
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+        run: npx tsx --tsconfig tsconfig.json scripts/ci/sync-scan-to-turso.ts
 
       - name: Upload scanner DB artifact
         if: always()

@@ -549,24 +549,17 @@ interface KronosCachedForecast {
 }
 
 /**
- * Fetch the cached Kronos forecast for an instrument from the scanner.
- * Returns null if no cache exists or the scanner is unreachable.
- * This NEVER blocks — on any failure it returns null (strategy → HOLD).
+ * Fetch the cached Kronos forecast for an instrument (Turso first, then scanner).
+ * Returns null if no cache exists. NEVER blocks long — failures → HOLD.
  */
 async function getKronosCachedForecast(instrument: string): Promise<KronosCachedForecast | null> {
   try {
-    // Server-side fetch needs an absolute URL (relative URLs fail in Node.js)
-    const baseUrl = typeof window === 'undefined'
-      ? `http://localhost:${process.env.SCANNER_PORT || '8000'}`
-      : ''
-    const res = await fetch(
-      `${baseUrl}/scanner/api/forecast/cached/${encodeURIComponent(instrument)}`,
-      { signal: AbortSignal.timeout(3000) } // 3s hard timeout — cache read should be <100ms
-    )
-    if (!res.ok) return null
-    return await res.json() as KronosCachedForecast
+    const { resolveKronosSummary } = await import('@/lib/ui-cache')
+    const data = await resolveKronosSummary(instrument)
+    if (!data) return null
+    return data as KronosCachedForecast
   } catch {
-    return null // scanner down, network error, timeout — silently return HOLD
+    return null
   }
 }
 

@@ -13,7 +13,7 @@ const AgentPanel = dynamic(() => import('@/components/scanner/AgentPanel'), { ss
 
 type ScannerView = 'scan' | 'agents' | 'performance' | 'history'
 
-export default function ScannerTab() {
+export default function ScannerTab({ refreshKey = 0 }: { refreshKey?: number }) {
   const [view, setView] = useState<ScannerView>('scan')
   const [picks, setPicks] = useState<PickData[]>([])
   const [methodsFired, setMethodsFired] = useState<Record<string, number>>({})
@@ -24,9 +24,8 @@ export default function ScannerTab() {
   const [performance, setPerformance] = useState<any[]>([])
   const [trades, setTrades] = useState<any[]>([])
   const [history, setHistory] = useState<any[]>([])
-  const [refreshKey, setRefreshKey] = useState(0)
 
-  // Fetch latest scan on mount
+  // Fetch latest scan on mount / after cron refreshKey
   useEffect(() => {
     fetchLatestScan()
     fetchPerformance()
@@ -35,6 +34,24 @@ export default function ScannerTab() {
   }, [refreshKey])
 
   const fetchLatestScan = async () => {
+    // Prefer Turso-synced scan (cron), fall back to live scanner
+    try {
+      const res = await fetch('/api/scanner/latest')
+      if (res.ok) {
+        const data = await res.json()
+        if (data.picks) {
+          setPicks(data.picks)
+          setMethodsFired(data.methods_fired || {})
+          setScanMeta({
+            total_scanned: data.total_scanned || 0,
+            total_candidates: data.total_candidates || 0,
+            scan_date: data.scan_date,
+          })
+          return
+        }
+      }
+    } catch { /* fall through */ }
+
     try {
       const res = await fetch('/scanner/api/scan/latest')
       if (res.ok) {
@@ -42,7 +59,11 @@ export default function ScannerTab() {
         if (data.picks) {
           setPicks(data.picks)
           setMethodsFired(data.methods_fired || {})
-          setScanMeta({ total_scanned: data.total_scanned || 0, total_candidates: data.total_candidates || 0, scan_date: data.scan_date })
+          setScanMeta({
+            total_scanned: data.total_scanned || 0,
+            total_candidates: data.total_candidates || 0,
+            scan_date: data.scan_date,
+          })
         }
       }
     } catch {}
@@ -69,6 +90,18 @@ export default function ScannerTab() {
   }
 
   const fetchHistory = async () => {
+    // Prefer Turso history, fall back to scanner
+    try {
+      const res = await fetch('/api/scanner/history?limit=30')
+      if (res.ok) {
+        const data = await res.json()
+        if (Array.isArray(data.history) && data.history.length > 0) {
+          setHistory(data.history)
+          return
+        }
+      }
+    } catch { /* fall through */ }
+
     try {
       const res = await fetch('/scanner/api/scan/history')
       if (res.ok) {
@@ -84,10 +117,17 @@ export default function ScannerTab() {
       const res = await fetch('/scanner/api/scan/run')
       if (res.ok) {
         const data = await res.json()
+        // Keep live scan results — do NOT bump refreshKey (that re-fetches Turso and can overwrite)
         setPicks(data.picks || [])
         setMethodsFired(data.methods_fired || {})
-        setScanMeta({ total_scanned: data.total_scanned, total_candidates: data.total_candidates, scan_date: data.scan_date })
-        setRefreshKey(k => k + 1)
+        setScanMeta({
+          total_scanned: data.total_scanned,
+          total_candidates: data.total_candidates,
+          scan_date: data.scan_date,
+        })
+        fetchPerformance()
+        fetchTrades()
+        fetchHistory()
       }
     } catch {
       // ignore

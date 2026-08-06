@@ -70,7 +70,7 @@ const EVENT_ICONS: Record<string, string> = {
   signal_exit: '📉',
 }
 
-export default function TradeIntelligenceTab() {
+export default function TradeIntelligenceTab({ refreshKey = 0 }: { refreshKey?: number }) {
   const [intData, setIntData] = useState<IntelligenceData | null>(null)
   const [tsData, setTsData] = useState<TrailingStopData | null>(null)
   const [timeline, setTimeline] = useState<TimelineData | null>(null)
@@ -96,7 +96,7 @@ export default function TradeIntelligenceTab() {
     fetchData()
     const interval = setInterval(fetchData, 30000)
     return () => clearInterval(interval)
-  }, [fetchData])
+  }, [fetchData, refreshKey])
 
   // Fetch timeline when a trade is selected
   useEffect(() => {

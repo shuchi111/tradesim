@@ -4,6 +4,7 @@ import StrategyPanel from '@/components/StrategyPanel'
 
 interface StrategyTabProps {
   onTradeComplete: () => void
+  refreshKey?: number
 }
 
 const STRATEGIES = [
@@ -61,10 +62,10 @@ const STRATEGIES = [
   },
 ]
 
-export default function StrategyTab({ onTradeComplete }: StrategyTabProps) {
+export default function StrategyTab({ onTradeComplete, refreshKey = 0 }: StrategyTabProps) {
   return (
     <div className="flex flex-1 flex-col overflow-y-auto">
-      <StrategyPanel onTradeComplete={onTradeComplete} />
+      <StrategyPanel onTradeComplete={onTradeComplete} refreshKey={refreshKey} />
 
       <div className="p-4">
         {/* Header */}

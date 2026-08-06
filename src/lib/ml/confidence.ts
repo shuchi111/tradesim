@@ -34,16 +34,9 @@ export interface ConfidenceScoreResult {
  */
 async function getKronosForConfidence(symbol: string): Promise<{ upside: number; vol: number; direction: string } | null> {
   try {
-    // Server-side fetch needs an absolute URL (relative URLs fail in Node.js)
-    const baseUrl = typeof window === 'undefined'
-      ? `http://localhost:${process.env.SCANNER_PORT || '8000'}`
-      : ''
-    const res = await fetch(
-      `${baseUrl}/scanner/api/forecast/cached/${encodeURIComponent(symbol)}`,
-      { signal: AbortSignal.timeout(3000) }
-    )
-    if (!res.ok) return null
-    const data = await res.json()
+    const { resolveKronosSummary } = await import('@/lib/ui-cache')
+    const data = await resolveKronosSummary(symbol)
+    if (!data) return null
     return {
       upside: data.upside_probability ?? 50,
       vol: data.volatility_amplification ?? 50,

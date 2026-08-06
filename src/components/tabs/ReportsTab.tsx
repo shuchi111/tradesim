@@ -35,7 +35,7 @@ interface FullReport {
   openPositions: Record<string, unknown>[] | null
 }
 
-export default function ReportsTab() {
+export default function ReportsTab({ refreshKey = 0 }: { refreshKey?: number }) {
   const { fmt } = useCurrency()
   const [reports, setReports] = useState<ReportSummary[]>([])
   const [selectedReport, setSelectedReport] = useState<FullReport | null>(null)
@@ -59,7 +59,7 @@ export default function ReportsTab() {
 
   useEffect(() => {
     fetchReports()
-  }, [fetchReports])
+  }, [fetchReports, refreshKey])
 
   const handleGenerate = async () => {
     setGenerating(true)

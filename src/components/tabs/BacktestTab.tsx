@@ -90,7 +90,8 @@ export default function BacktestTab({ refreshKey = 0 }: { refreshKey?: number })
   const [error, setError] = useState<string | null>(null)
   const [pastBacktests, setPastBacktests] = useState<PastBacktest[]>([])
   const [selectedPastId, setSelectedPastId] = useState<number | ''>('')
-  const autoLoadedRef = useRef(false)
+  const [listLoading, setListLoading] = useState(true)
+  const autoLoadedIdRef = useRef<number | null>(null)
 
   // Chart refs
   const chartContainerRef = useRef<HTMLDivElement>(null)
@@ -100,11 +101,15 @@ export default function BacktestTab({ refreshKey = 0 }: { refreshKey?: number })
   const loadPastBacktest = useCallback(async (id: number) => {
     try {
       const res = await fetch(`/api/backtest/${id}`)
-      if (!res.ok) throw new Error('Failed to load')
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { error?: string }
+        throw new Error(body.error || `Failed to load backtest #${id}`)
+      }
       const data = await res.json()
       setResult(data)
       setSelectedPastId(id)
       setError(null)
+      autoLoadedIdRef.current = id
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')
     }
@@ -113,21 +118,36 @@ export default function BacktestTab({ refreshKey = 0 }: { refreshKey?: number })
   const fetchPastBacktests = useCallback(async (autoLoadLatest: boolean) => {
     try {
       const res = await fetch('/api/backtest')
-      if (res.ok) {
-        const data: PastBacktest[] = await res.json()
-        setPastBacktests(data)
-        if (autoLoadLatest && data.length > 0) {
-          await loadPastBacktest(data[0].id)
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { error?: string }
+        setError(body.error || `Failed to list backtests (${res.status})`)
+        return
+      }
+      const data: PastBacktest[] = await res.json()
+      if (!Array.isArray(data)) {
+        setError('Unexpected backtest list response')
+        return
+      }
+      setPastBacktests(data)
+      if (autoLoadLatest && data.length > 0) {
+        const latestId = data[0].id
+        // Always show latest after cron / mount; skip only if already showing that id
+        if (autoLoadedIdRef.current !== latestId) {
+          await loadPastBacktest(latestId)
         }
       }
-    } catch { /* ignore */ }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch backtests')
+    } finally {
+      setListLoading(false)
+    }
   }, [loadPastBacktest])
 
-  // Load past backtests on mount + after cron refresh; auto-show latest result
+  // Load on mount + when cron bumps refreshKey; also poll so CLI/cron results appear without remount
   useEffect(() => {
-    const shouldAuto = !autoLoadedRef.current || refreshKey > 0
-    if (!autoLoadedRef.current) autoLoadedRef.current = true
-    fetchPastBacktests(shouldAuto)
+    fetchPastBacktests(true)
+    const interval = setInterval(() => fetchPastBacktests(true), 15000)
+    return () => clearInterval(interval)
   }, [refreshKey, fetchPastBacktests])
 
   // ── Chart init ──
@@ -501,9 +521,13 @@ export default function BacktestTab({ refreshKey = 0 }: { refreshKey?: number })
       {!result && !running && !error && (
         <div className="flex flex-col items-center justify-center rounded-xl border border-slate-700 bg-slate-800/30 p-12">
           <div className="mb-3 text-5xl">📊</div>
-          <div className="text-lg font-medium text-slate-300">No backtest yet</div>
-          <div className="mt-1 text-sm text-slate-500">
-            Select a date range and stocks, then click Run Backtest to see how the strategies perform historically.
+          <div className="text-lg font-medium text-slate-300">
+            {listLoading ? 'Loading backtests…' : 'No backtest yet'}
+          </div>
+          <div className="mt-1 max-w-md text-center text-sm text-slate-500">
+            {listLoading
+              ? 'Fetching the latest cron / saved results…'
+              : 'Waiting for the daily backtest cron. Results appear automatically within ~15s after a successful run (app must use the same Turso DB as the cron script).'}
           </div>
         </div>
       )}

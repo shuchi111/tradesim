@@ -1,6 +1,7 @@
 /**
  * CI / GitHub Actions — run a daily portfolio backtest and notify the UI.
  */
+import 'dotenv/config'
 import { INSTRUMENTS } from '../../src/types'
 import { runBacktest, saveBacktest } from '../../src/lib/backtest'
 import { createNotification } from '../../src/lib/trading'

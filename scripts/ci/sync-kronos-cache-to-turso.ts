@@ -2,6 +2,7 @@
  * CI — sync Kronos forecasts from scanner/tauric.db → Turso ForecastCache
  * + notify UI so Forecast / AI Score tabs can auto-load.
  */
+import 'dotenv/config'
 import Database from 'better-sqlite3'
 import path from 'path'
 import { Prisma } from '@prisma/client'

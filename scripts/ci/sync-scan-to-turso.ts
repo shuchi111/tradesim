@@ -2,6 +2,7 @@
  * CI — sync latest Tauric scan from scanner/tauric.db → Turso ScannerScan
  * + notify UI so Tauric tab can auto-load.
  */
+import 'dotenv/config'
 import Database from 'better-sqlite3'
 import path from 'path'
 import { Prisma } from '@prisma/client'

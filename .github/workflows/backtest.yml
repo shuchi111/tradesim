@@ -1,0 +1,48 @@
+name: Daily Backtest
+
+on:
+  schedule:
+    # 3:45 PM IST = 10:15 UTC, Mon–Fri (after market close, before daily report)
+    - cron: '15 10 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Require Turso / database secrets
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+        run: |
+          if [ -z "$TURSO_DATABASE_URL" ] || [ -z "$TURSO_AUTH_TOKEN" ]; then
+            if [ -z "$DATABASE_URL" ]; then
+              echo "::error::Set TURSO_DATABASE_URL + TURSO_AUTH_TOKEN (preferred) or DATABASE_URL."
+              exit 1
+            fi
+            echo "::warning::Turso secrets missing — falling back to DATABASE_URL only."
+          else
+            echo "Turso secrets are set"
+          fi
+
+      - name: Run daily backtest
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+        run: npx tsx --tsconfig tsconfig.json scripts/ci/run-backtest-once.ts

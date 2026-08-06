@@ -38,7 +38,7 @@ interface PriceInfo {
   currency: string
 }
 
-export default function WalletTab() {
+export default function WalletTab({ refreshKey = 0 }: { refreshKey?: number }) {
   const [wallet, setWallet] = useState<WalletData | null>(null)
   const [positions, setPositions] = useState<Position[]>([])
   const [trades, setTrades] = useState<TradeRecord[]>([])
@@ -99,7 +99,7 @@ export default function WalletTab() {
     fetchData()
     const interval = setInterval(fetchData, 5000)
     return () => clearInterval(interval)
-  }, [fetchData])
+  }, [fetchData, refreshKey])
 
   // Poll prices for open positions
   useEffect(() => {

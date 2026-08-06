@@ -41,7 +41,7 @@ interface MetricsData {
   xirr: number
 }
 
-export default function HealthTab() {
+export default function HealthTab({ refreshKey = 0 }: { refreshKey?: number }) {
   const { fmt } = useCurrency()
   const [risk, setRisk] = useState<HealthData | null>(null)
   const [metrics, setMetrics] = useState<MetricsData | null>(null)
@@ -78,7 +78,7 @@ export default function HealthTab() {
     fetchData()
     const interval = setInterval(fetchData, 30000)
     return () => clearInterval(interval)
-  }, [fetchData])
+  }, [fetchData, refreshKey])
 
   if (loading) {
     return (

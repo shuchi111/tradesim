@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 
 interface Notification {
   id: number
@@ -13,30 +13,76 @@ interface Notification {
   createdAt: string
 }
 
-export default function NotificationBell({ refreshKey, onNavigate }: { refreshKey: number; onNavigate?: (tab: string, symbol?: string) => void }) {
+const JOB_TYPES = new Set([
+  'forecast_ready',
+  'scan_ready',
+  'backtest_ready',
+  'report',
+  'system',
+])
+
+const TAB_MAP: Record<string, string> = {
+  trade_open: 'holdings',
+  trade_close: 'holdings',
+  risk_event: 'strategy',
+  system: 'health',
+  report: 'reports',
+  forecast_ready: 'forecast',
+  scan_ready: 'scanner',
+  backtest_ready: 'backtest',
+}
+
+export default function NotificationBell({
+  onNavigate,
+  onJobReady,
+}: {
+  refreshKey?: number
+  onNavigate?: (tab: string, symbol?: string) => void
+  onJobReady?: () => void
+}) {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
   const [open, setOpen] = useState(false)
   const [selected, setSelected] = useState<Notification | null>(null)
+  const knownIdsRef = useRef<Set<number>>(new Set())
+  const primedRef = useRef(false)
 
   const fetchNotifications = useCallback(async () => {
     try {
       const res = await fetch('/api/notifications?limit=20')
       if (res.ok) {
         const data = await res.json()
-        setNotifications(data.notifications || [])
+        const list: Notification[] = data.notifications || []
+        setNotifications(list)
         setUnreadCount(data.unreadCount || 0)
+
+        // After first successful fetch, detect new cron/job notifications and bump refreshKey
+        if (!primedRef.current) {
+          knownIdsRef.current = new Set(list.map((n) => n.id))
+          primedRef.current = true
+        } else if (onJobReady) {
+          const fresh = list.filter(
+            (n) => !knownIdsRef.current.has(n.id) && JOB_TYPES.has(n.type)
+          )
+          if (fresh.length > 0) {
+            for (const n of list) knownIdsRef.current.add(n.id)
+            onJobReady()
+          } else {
+            for (const n of list) knownIdsRef.current.add(n.id)
+          }
+        }
       }
     } catch {
       // ignore
     }
-  }, [])
+  }, [onJobReady])
 
   useEffect(() => {
     fetchNotifications()
     const interval = setInterval(fetchNotifications, 15000)
     return () => clearInterval(interval)
-  }, [fetchNotifications, refreshKey])
+  }, [fetchNotifications])
+  // Note: do not depend on refreshKey — onJobReady bumps it; re-fetching here would cascade.
 
   const handleMarkAllRead = async () => {
     try {
@@ -53,7 +99,6 @@ export default function NotificationBell({ refreshKey, onNavigate }: { refreshKe
   }
 
   const handleNotificationClick = async (n: Notification) => {
-    // Mark as read
     if (!n.isRead) {
       try {
         await fetch('/api/notifications', {
@@ -67,21 +112,13 @@ export default function NotificationBell({ refreshKey, onNavigate }: { refreshKe
         // ignore
       }
     }
-    // Show detail popup
     setSelected(n)
     setOpen(false)
   }
 
   const handleGoToTab = () => {
     if (!selected || !onNavigate) return
-    const tabMap: Record<string, string> = {
-      trade_open: 'holdings',
-      trade_close: 'holdings',
-      risk_event: 'strategy',
-      system: 'health',
-      report: 'reports',
-    }
-    const tab = tabMap[selected.type] || 'home'
+    const tab = TAB_MAP[selected.type] || 'home'
     onNavigate(tab, selected.symbol || undefined)
     setSelected(null)
   }
@@ -104,6 +141,9 @@ export default function NotificationBell({ refreshKey, onNavigate }: { refreshKe
     risk_event: '⚠️',
     system: '⚙️',
     report: '📄',
+    forecast_ready: '🔮',
+    scan_ready: '🔬',
+    backtest_ready: '🧪',
   }
   const typeLabels: Record<string, string> = {
     trade_open: 'Position Opened',
@@ -111,6 +151,9 @@ export default function NotificationBell({ refreshKey, onNavigate }: { refreshKe
     risk_event: 'Risk Event',
     system: 'System',
     report: 'Daily Report',
+    forecast_ready: 'AI Forecast Ready',
+    scan_ready: 'Tauric Scan Ready',
+    backtest_ready: 'Backtest Ready',
   }
 
   return (
@@ -179,14 +222,12 @@ export default function NotificationBell({ refreshKey, onNavigate }: { refreshKe
         )}
       </div>
 
-      {/* Detail popup */}
       {selected && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4" onClick={() => setSelected(null)}>
           <div
             className={`w-full max-w-md rounded-xl border p-5 shadow-2xl ${severityBg[selected.severity] || 'border-slate-600 bg-slate-900'}`}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Header */}
             <div className="flex items-start gap-3">
               <span className="text-3xl">{typeIcons[selected.type] || '📊'}</span>
               <div className="flex-1">
@@ -199,7 +240,6 @@ export default function NotificationBell({ refreshKey, onNavigate }: { refreshKe
               </div>
             </div>
 
-            {/* Symbol badge */}
             {selected.symbol && (
               <div className="mt-3">
                 <span className="rounded-md bg-slate-800 px-2 py-1 text-xs font-medium text-white">
@@ -208,13 +248,11 @@ export default function NotificationBell({ refreshKey, onNavigate }: { refreshKe
               </div>
             )}
 
-            {/* Message */}
             <div className="mt-4 rounded-lg bg-slate-900/60 p-3">
               <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)]">Details</div>
               <p className="mt-1 text-sm text-white">{selected.message}</p>
             </div>
 
-            {/* Timestamp */}
             <div className="mt-3 text-xs text-[var(--text-secondary)]">
               🕐 {new Date(selected.createdAt).toLocaleString('en-IN', {
                 weekday: 'short', day: 'numeric', month: 'short',
@@ -222,16 +260,15 @@ export default function NotificationBell({ refreshKey, onNavigate }: { refreshKe
               })}
             </div>
 
-            {/* Actions */}
             <div className="mt-5 flex gap-2">
-              {selected.symbol && (
-                <button
-                  onClick={handleGoToTab}
-                  className="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-                >
-                  View {selected.symbol} →
-                </button>
-              )}
+              <button
+                onClick={handleGoToTab}
+                className="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+              >
+                {selected.symbol
+                  ? `View ${selected.symbol} →`
+                  : `Open ${typeLabels[selected.type] || 'tab'} →`}
+              </button>
               <button
                 onClick={() => setSelected(null)}
                 className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-medium text-white hover:bg-slate-600"

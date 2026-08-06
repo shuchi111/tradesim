@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import Header from '@/components/Header'
 import StatsBar from '@/components/StatsBar'
 import HomeTab from '@/components/tabs/HomeTab'
@@ -42,8 +42,12 @@ export default function Home() {
   const [timeframe, setTimeframe] = useState('1d')
   const [refreshKey, setRefreshKey] = useState(0)
 
-  const handleTradeComplete = () => {
+  const bumpRefresh = useCallback(() => {
     setRefreshKey((k) => k + 1)
+  }, [])
+
+  const handleTradeComplete = () => {
+    bumpRefresh()
   }
 
   return (
@@ -74,9 +78,11 @@ export default function Home() {
         <div className="ml-auto shrink-0 pl-2">
           <NotificationBell
             refreshKey={refreshKey}
+            onJobReady={bumpRefresh}
             onNavigate={(tab: string, sym?: string) => {
               setActiveTab(tab as TabName)
               if (sym) setSymbol(sym)
+              bumpRefresh()
             }}
           />
         </div>
@@ -103,17 +109,17 @@ export default function Home() {
             onTradeComplete={handleTradeComplete}
           />
         )}
-        {activeTab === 'strategy' && <StrategyTab onTradeComplete={handleTradeComplete} />}
-        {activeTab === 'backtest' && (
-          <BacktestTab />
+        {activeTab === 'strategy' && (
+          <StrategyTab onTradeComplete={handleTradeComplete} refreshKey={refreshKey} />
         )}
-        {activeTab === 'intelligence' && <TradeIntelligenceTab />}
-        {activeTab === 'confidence' && <ConfidenceTab />}
-        {activeTab === 'health' && <HealthTab />}
-        {activeTab === 'scanner' && <ScannerTab />}
-        {activeTab === 'forecast' && <ForecastTab symbol={symbol} />}
-        {activeTab === 'reports' && <ReportsTab />}
-        {activeTab === 'wallet' && <WalletTab />}
+        {activeTab === 'backtest' && <BacktestTab refreshKey={refreshKey} />}
+        {activeTab === 'intelligence' && <TradeIntelligenceTab refreshKey={refreshKey} />}
+        {activeTab === 'confidence' && <ConfidenceTab refreshKey={refreshKey} />}
+        {activeTab === 'health' && <HealthTab refreshKey={refreshKey} />}
+        {activeTab === 'scanner' && <ScannerTab refreshKey={refreshKey} />}
+        {activeTab === 'forecast' && <ForecastTab symbol={symbol} refreshKey={refreshKey} />}
+        {activeTab === 'reports' && <ReportsTab refreshKey={refreshKey} />}
+        {activeTab === 'wallet' && <WalletTab refreshKey={refreshKey} />}
       </div>
     </div>
   )

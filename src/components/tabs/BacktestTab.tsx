@@ -80,7 +80,7 @@ function defaultEndDate(): string {
 
 // ─── Component ────────────────────────────────────────────────────
 
-export default function BacktestTab() {
+export default function BacktestTab({ refreshKey = 0 }: { refreshKey?: number }) {
   const [startDate, setStartDate] = useState(defaultStartDate())
   const [endDate, setEndDate] = useState(defaultEndDate())
   const [selectedSymbols, setSelectedSymbols] = useState<string[]>(TRADABLE.map((i) => i.symbol))
@@ -89,26 +89,46 @@ export default function BacktestTab() {
   const [result, setResult] = useState<BacktestResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [pastBacktests, setPastBacktests] = useState<PastBacktest[]>([])
+  const [selectedPastId, setSelectedPastId] = useState<number | ''>('')
+  const autoLoadedRef = useRef(false)
 
   // Chart refs
   const chartContainerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const equitySeriesRef = useRef<ISeriesApi<'Area'> | null>(null)
 
-  // Load past backtests on mount
-  useEffect(() => {
-    fetchPastBacktests()
+  const loadPastBacktest = useCallback(async (id: number) => {
+    try {
+      const res = await fetch(`/api/backtest/${id}`)
+      if (!res.ok) throw new Error('Failed to load')
+      const data = await res.json()
+      setResult(data)
+      setSelectedPastId(id)
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error')
+    }
   }, [])
 
-  const fetchPastBacktests = async () => {
+  const fetchPastBacktests = useCallback(async (autoLoadLatest: boolean) => {
     try {
       const res = await fetch('/api/backtest')
       if (res.ok) {
-        const data = await res.json()
+        const data: PastBacktest[] = await res.json()
         setPastBacktests(data)
+        if (autoLoadLatest && data.length > 0) {
+          await loadPastBacktest(data[0].id)
+        }
       }
     } catch { /* ignore */ }
-  }
+  }, [loadPastBacktest])
+
+  // Load past backtests on mount + after cron refresh; auto-show latest result
+  useEffect(() => {
+    const shouldAuto = !autoLoadedRef.current || refreshKey > 0
+    if (!autoLoadedRef.current) autoLoadedRef.current = true
+    fetchPastBacktests(shouldAuto)
+  }, [refreshKey, fetchPastBacktests])
 
   // ── Chart init ──
   useEffect(() => {
@@ -190,26 +210,14 @@ export default function BacktestTab() {
 
       setResult(data)
       setProgress('')
-      fetchPastBacktests() // refresh list
+      fetchPastBacktests(false) // refresh list without reloading result
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')
     } finally {
       setRunning(false)
       setProgress('')
     }
-  }, [startDate, endDate, selectedSymbols])
-
-  // ── Load a past backtest ──
-  const loadPastBacktest = async (id: number) => {
-    try {
-      const res = await fetch(`/api/backtest/${id}`)
-      if (!res.ok) throw new Error('Failed to load')
-      const data = await res.json()
-      setResult(data)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error')
-    }
-  }
+  }, [startDate, endDate, selectedSymbols, fetchPastBacktests])
 
   // ── Symbol toggle ──
   const toggleSymbol = (sym: string) => {
@@ -302,8 +310,8 @@ export default function BacktestTab() {
             <div className="ml-auto flex items-center gap-2">
               <span className="text-xs text-slate-500">Load past:</span>
               <select
+                value={selectedPastId}
                 onChange={(e) => e.target.value && loadPastBacktest(parseInt(e.target.value, 10))}
-                defaultValue=""
                 className="rounded-lg border border-slate-700 bg-slate-800 px-2 py-1 text-xs text-white"
               >
                 <option value="">Select...</option>

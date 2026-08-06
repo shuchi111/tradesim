@@ -27,14 +27,45 @@ jobs:
       - name: Refresh Kronos cache
         env:
           HF_HOME: ${{ github.workspace }}/.cache/huggingface
-          # Kronos writes local scanner/tauric.db only (uploaded as artifact).
-          # Portfolio Turso DB is not used by this job.
         run: |
           uv run --no-sync --directory scanner python -c "
           import asyncio
           from scheduler import run_daily_kronos_cache
           asyncio.run(run_daily_kronos_cache())
           "
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install Node deps + Prisma
+        run: |
+          npm ci
+          npx prisma generate
+
+      - name: Require Turso for UI sync
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+        run: |
+          if [ -z "$TURSO_DATABASE_URL" ] || [ -z "$TURSO_AUTH_TOKEN" ]; then
+            if [ -z "$DATABASE_URL" ]; then
+              echo "::error::Set TURSO_DATABASE_URL + TURSO_AUTH_TOKEN (preferred) or DATABASE_URL so forecasts reach the UI."
+              exit 1
+            fi
+            echo "::warning::Turso secrets missing — falling back to DATABASE_URL only."
+          else
+            echo "Turso secrets are set"
+          fi
+
+      - name: Sync Kronos cache → Turso + notify UI
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+        run: npx tsx --tsconfig tsconfig.json scripts/ci/sync-kronos-cache-to-turso.ts
 
       - name: Upload scanner DB artifact
         if: always()

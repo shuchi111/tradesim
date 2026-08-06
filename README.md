@@ -4,12 +4,14 @@ Paper trading platform for Indian equities — live charts, wallet, multi-strate
 
 ## Prerequisites
 
-| Tool | Version | Notes |
-|------|---------|--------|
-| **Node.js** | **22 LTS** | Node 24+ can break `better-sqlite3` native builds on Windows |
-| **npm** | comes with Node | |
-| **uv** | latest | [Install uv](https://docs.astral.sh/uv/getting-started/installation/) — manages the Python scanner env |
-| **Python** | **3.12** | Pinned in `.python-version` / `pyproject.toml` (`>=3.12,<3.13`) |
+
+| Tool        | Version         | Notes                                                                                                  |
+| ----------- | --------------- | ------------------------------------------------------------------------------------------------------ |
+| **Node.js** | **22 LTS**      | Node 24+ can break `better-sqlite3` native builds on Windows                                           |
+| **npm**     | comes with Node |                                                                                                        |
+| **uv**      | latest          | [Install uv](https://docs.astral.sh/uv/getting-started/installation/) — manages the Python scanner env |
+| **Python**  | **3.12**        | Pinned in `.python-version` / `pyproject.toml` (`>=3.12,<3.13`)                                        |
+
 
 Optional on Windows if `better-sqlite3` fails to install: [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with **Desktop development with C++**. Prefer switching to Node 22 instead.
 
@@ -137,61 +139,67 @@ LLM / agent keys (optional): `ANTHROPIC_BASE_URL`, `ANTHROPIC_API_KEY`, `LLM_MOD
 
 ## npm scripts
 
-| Script | Purpose |
-|--------|---------|
-| `npm run dev` | Next.js dev server |
-| `npm run build` / `start` | Production build / serve |
-| `npm run scanner:sync` | `uv sync` — install/update Python deps |
-| `npm run scanner` | Start FastAPI scanner (no sync) |
-| `npm run autotrade` | Server-side auto-trade loop |
-| `npm run seed` | Seed DB |
-| `npm run db:migrate-turso` | Apply SIP column migration to Turso |
+
+| Script                       | Purpose                                   |
+| ---------------------------- | ----------------------------------------- |
+| `npm run dev`                | Next.js dev server                        |
+| `npm run build` / `start`    | Production build / serve                  |
+| `npm run scanner:sync`       | `uv sync` — install/update Python deps    |
+| `npm run scanner`            | Start FastAPI scanner (no sync)           |
+| `npm run autotrade`          | Server-side auto-trade loop               |
+| `npm run seed`               | Seed DB                                   |
+| `npm run db:migrate-turso`   | Apply SIP column migration to Turso       |
 | `npm run db:reset-portfolio` | Reset portfolio to ₹1L (+ SIP next month) |
-| `npm run pr:review` | Quant/finance static PR review script |
-| `npm test` | Vitest |
+| `npm run pr:review`          | Quant/finance static PR review script     |
+| `npm test`                   | Vitest                                    |
+
 
 ## Layout
 
-| Path | Role |
-|------|------|
-| `src/` | Next.js app, APIs, UI |
-| `prisma/` | Schema + local SQLite / Turso |
-| `scanner/` | Python scanner & AI engines |
+
+| Path                                   | Role                               |
+| -------------------------------------- | ---------------------------------- |
+| `src/`                                 | Next.js app, APIs, UI              |
+| `prisma/`                              | Schema + local SQLite / Turso      |
+| `scanner/`                             | Python scanner & AI engines        |
 | `pyproject.toml` / `uv.lock` / `.venv` | Scanner Python project (repo root) |
-| `wheels/` | Local torch CPU wheel (gitignored) |
-| `scripts/` | Import / maintenance scripts |
-| `tests/` | Vitest |
+| `wheels/`                              | Local torch CPU wheel (gitignored) |
+| `scripts/`                             | Import / maintenance scripts       |
+| `tests/`                               | Vitest                             |
+
 
 Local-only (gitignored): `docs/`, `migration/`, `.venv/`, `wheels/*.whl`.
 
 ## Troubleshooting
 
-| Symptom | Fix |
-|---------|-----|
-| `'next' is not recognized` | Run `npm install` from `tradesim/` |
-| `Cannot find module '.prisma/client/default'` | `npx prisma generate` |
-| `better-sqlite3` / `node-gyp` / missing Visual Studio | Use **Node 22 LTS**, then reinstall (`rm -rf node_modules` → `npm install`) |
-| Forecast: 0 bars / yfinance “delisted” | Ensure `yfinance==1.5.2` via `npm run scanner:sync`; scanner uses Yahoo chart API fallback |
-| Forecast: torch not installed | Run `npm run scanner:sync` (pulls CPU torch from PyTorch index) |
-| `EADDRINUSE` / port 8000 in use | Stop old scanner PID, or set `SCANNER_PORT` |
-| `uv sync` Python 3.11 resolve error for torch wheel | Keep `requires-python = ">=3.12,<3.13"` and Python 3.12 |
+
+| Symptom                                               | Fix                                                                                        |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `'next' is not recognized`                            | Run `npm install` from `tradesim/`                                                         |
+| `Cannot find module '.prisma/client/default'`         | `npx prisma generate`                                                                      |
+| `better-sqlite3` / `node-gyp` / missing Visual Studio | Use **Node 22 LTS**, then reinstall (`rm -rf node_modules` → `npm install`)                |
+| Forecast: 0 bars / yfinance “delisted”                | Ensure `yfinance==1.5.2` via `npm run scanner:sync`; scanner uses Yahoo chart API fallback |
+| Forecast: torch not installed                         | Run `npm run scanner:sync` (pulls CPU torch from PyTorch index)                            |
+| `EADDRINUSE` / port 8000 in use                       | Stop old scanner PID, or set `SCANNER_PORT`                                                |
+| `uv sync` Python 3.11 resolve error for torch wheel   | Keep `requires-python = ">=3.12,<3.13"` and Python 3.12                                    |
+
 
 ## Scheduled jobs (GitHub Actions)
 
-See [`.github/CRON-SCHEDULE.md`](.github/CRON-SCHEDULE.md) — **4 workflows**:
+See `[.github/CRON-SCHEDULE.md](.github/CRON-SCHEDULE.md)` — **4 workflows**:
 
-1. Kronos cache — 6:30 AM IST  
-2. Daily scan — 9:00 AM IST  
-3. Auto-trade — every **15 min**, 9:15–15:30 IST  
-4. Daily report — 4:00 PM IST  
+1. Kronos cache — 6:30 AM IST
+2. Daily scan — 9:00 AM IST
+3. Auto-trade — every **15 min**, 9:15–15:30 IST
+4. Daily report — 4:00 PM IST
 
 ### PR review (quant / finance)
 
-On every pull request, [`.github/workflows/pr-review.yml`](.github/workflows/pr-review.yml) runs **Claude Code Action** with a senior quant/finance review prompt (TradeSim portfolio guardrails + correctness checklist). It posts PR / inline comments.
+On every pull request, `[.github/workflows/pr-review.yml](.github/workflows/pr-review.yml)` runs **Claude Code Action** with a senior quant/finance review prompt (TradeSim portfolio guardrails + correctness checklist). It posts PR / inline comments.
 
 **Secrets (same as other Actions):** `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL` (fallback: `LLM_API_KEY`, `LLM_BASE_URL`).
 
-Details: [`.github/PR-REVIEW.md`](.github/PR-REVIEW.md).
+Details: `[.github/PR-REVIEW.md](.github/PR-REVIEW.md)`.
 
 Optional local static scan (no LLM):
 

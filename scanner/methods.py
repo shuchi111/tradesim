@@ -178,12 +178,12 @@ def method_m6_engulfing(df: pd.DataFrame, summary: dict) -> dict:
 def get_symbol_sector(symbol: str) -> str:
     """Map symbol to its sector index."""
     SECTOR_MAP = {
-        'RELIANCE.NS': '^CNXENERGY', 'TCS.NS': '^CNXIT', 'HDFCBANK.NS': '^CNXBANK',
-        'INFY.NS': '^CNXIT', 'ICICIBANK.NS': '^CNXBANK', 'SBIN.NS': '^CNXBANK',
-        'AXISBANK.NS': '^CNXBANK', 'KOTAKBANK.NS': '^CNXBANK', 'ITC.NS': '^CNXFMCG',
+        'RELIANCE.NS': '^CNXENERGY', 'TCS.NS': '^CNXIT', 'HDFCBANK.NS': '^NSEBANK',
+        'INFY.NS': '^CNXIT', 'ICICIBANK.NS': '^NSEBANK', 'SBIN.NS': '^NSEBANK',
+        'AXISBANK.NS': '^NSEBANK', 'KOTAKBANK.NS': '^NSEBANK', 'ITC.NS': '^CNXFMCG',
         'LT.NS': '^CNXINFRA', 'HINDUNILVR.NS': '^CNXFMCG', 'BHARTIARTL.NS': '^CNXMEDIA',
         'MARUTI.NS': '^CNXAUTO', 'ASIANPAINT.NS': '^CNXFMCG', 'WIPRO.NS': '^CNXIT',
-        'TATAMOTORS.NS': '^CNXAUTO', 'BAJFINANCE.NS': '^CNXFIN', 'TITAN.NS': '^CNXFMCG',
+        'TATAMOTORS.NS': '^CNXAUTO', 'TMPV.NS': '^CNXAUTO', 'BAJFINANCE.NS': '^CNXFIN', 'TITAN.NS': '^CNXFMCG',
         'SUNPHARMA.NS': '^CNXPHARMA', 'HCLTECH.NS': '^CNXIT', 'ULTRACEMCO.NS': '^CNXINFRA',
         'NESTLEIND.NS': '^CNXFMCG', 'TECHM.NS': '^CNXIT', 'POWERGRID.NS': '^CNXENERGY',
         'NTPC.NS': '^CNXENERGY', 'ONGC.NS': '^CNXENERGY', 'COALINDIA.NS': '^CNXENERGY',
@@ -193,13 +193,15 @@ def get_symbol_sector(symbol: str) -> str:
         'HEROMOTOCO.NS': '^CNXAUTO', 'BAJAJ-AUTO.NS': '^CNXAUTO', 'HINDALCO.NS': '^CNXMETAL',
         'IOC.NS': '^CNXENERGY', 'BPCL.NS': '^CNXENERGY', 'ADANIENT.NS': '^CNXINFRA',
         'ADANIPORTS.NS': '^CNXINFRA', 'HDFCLIFE.NS': '^CNXFIN', 'SBILIFE.NS': '^CNXFIN',
-        'DMART.NS': '^CNXFMCG', 'ZOMATO.NS': '^CNXFMCG', 'PIDILITIND.NS': '^CNXINFRA',
+        'DMART.NS': '^CNXFMCG', 'ETERNAL.NS': '^CNXFMCG', 'ZOMATO.NS': '^CNXFMCG',
+        'PIDILITIND.NS': '^CNXINFRA',
         'SIEMENS.NS': '^CNXINFRA', 'ABB.NS': '^CNXINFRA', 'DLF.NS': '^CNXREALTY',
         'M&M.NS': '^CNXAUTO', 'HAL.NS': '^CNXINFRA', 'BEL.NS': '^CNXINFRA',
         'INDIGO.NS': '^CNXAUTO', 'VEDL.NS': '^CNXMETAL', 'NMDC.NS': '^CNXMETAL',
         'GAIL.NS': '^CNXENERGY', 'PFC.NS': '^CNXFIN', 'RECLTD.NS': '^CNXFIN',
         'CHOLAFIN.NS': '^CNXFIN', 'SHRIRAMFIN.NS': '^CNXFIN', 'CGPOWER.NS': '^CNXINFRA',
         'POLYCAB.NS': '^CNXINFRA', 'TVSMOTOR.NS': '^CNXAUTO',
+        'INDUSINDBK.NS': '^NSEBANK',
     }
     return SECTOR_MAP.get(symbol, '')
 

@@ -123,6 +123,20 @@ async def score_stock_with_ai(symbol: str, summary: dict, methods_triggered: lis
                     except (ValueError, TypeError):
                         pass
 
+            # Fill missing targets from entry when LLM omits them
+            close = float(summary.get('close') or 0)
+            entry_high = float(result.get('entry_high') or close or 0)
+            if 'target_1' not in result and entry_high > 0:
+                result['target_1'] = round(entry_high * 1.04, 2)
+            if 'target_2' not in result and entry_high > 0:
+                result['target_2'] = round(entry_high * 1.08, 2)
+            if 'stop_loss' not in result and entry_high > 0:
+                result['stop_loss'] = round(entry_high * 0.96, 2)
+            if 'entry_low' not in result and entry_high > 0:
+                result['entry_low'] = round(entry_high * 0.99, 2)
+            if 'entry_high' not in result and close > 0:
+                result['entry_high'] = close
+
             # Validate required fields
             required = ['score', 'entry_low', 'entry_high', 'stop_loss', 'target_1', 'target_2']
             for field in required:

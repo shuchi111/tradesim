@@ -12,7 +12,7 @@ from config import NIFTY500_UNIVERSE, MAX_PICKS, SECTOR_INDICES
 from market_context import get_market_context, fetch_yahoo, determine_regime
 from methods import run_all_methods, get_symbol_sector
 from ai_scorer import score_stock_with_ai
-from database import save_scan_result
+from database import init_db, save_scan_result
 from yahoo_data import fetch_ohlcv
 
 logger = logging.getLogger('tauric.scanner')
@@ -44,6 +44,7 @@ async def run_full_scan() -> dict:
     Returns the scan result with top picks.
     """
     logger.info("Starting full scan...")
+    init_db()
 
     # 1. Get market context
     context = await get_market_context()

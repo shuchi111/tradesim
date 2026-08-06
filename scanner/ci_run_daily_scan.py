@@ -24,8 +24,10 @@ def _require_llm() -> None:
 
 async def main() -> None:
     _require_llm()
+    from database import init_db
     from scanner_engine import run_full_scan
 
+    init_db()
     result = await run_full_scan()
     picks = result.get('picks') or []
     print(

@@ -25,6 +25,11 @@ _SYMBOL_ALIASES = {
     'NIFTY': '^NSEI',
     '%5ENSEI': '^NSEI',
     'NSEI': '^NSEI',
+    # Yahoo renames / legacy tickers
+    '^CNXBANK': '^NSEBANK',
+    'INDUSLTDK.NS': 'INDUSINDBK.NS',
+    'ZOMATO.NS': 'ETERNAL.NS',  # Zomato → Eternal Ltd
+    'TATAMOTORS.NS': 'TMPV.NS',  # Tata Motors → TMPV
 }
 
 # Yahoo chart `range` values

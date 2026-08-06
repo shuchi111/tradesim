@@ -32,7 +32,7 @@ export const INSTRUMENTS: Instrument[] = [
   { symbol: 'BAJFINANCE', yahooSymbol: 'BAJFINANCE.NS', label: 'Bajaj Finance', base: 'BAJFINANCE', currency: 'INR', exchange: 'NSE', sector: 'NBFC', index: 'NIFTY50' },
   { symbol: 'NTPC', yahooSymbol: 'NTPC.NS', label: 'NTPC Limited', base: 'NTPC', currency: 'INR', exchange: 'NSE', sector: 'Power', index: 'NIFTY50' },
   { symbol: 'POWERGRID', yahooSymbol: 'POWERGRID.NS', label: 'Power Grid Corporation', base: 'POWERGRID', currency: 'INR', exchange: 'NSE', sector: 'Power', index: 'NIFTY50' },
-  { symbol: 'TATAMOTORS', yahooSymbol: 'TATAMOTORS.NS', label: 'Tata Motors', base: 'TATAMOTORS', currency: 'INR', exchange: 'NSE', sector: 'Auto', index: 'NIFTY50' },
+  { symbol: 'TMPV', yahooSymbol: 'TMPV.NS', label: 'Tata Motors Passenger Vehicles', base: 'TMPV', currency: 'INR', exchange: 'NSE', sector: 'Auto', index: 'NIFTY50' },
   { symbol: 'ONGC', yahooSymbol: 'ONGC.NS', label: 'Oil and Natural Gas Corp', base: 'ONGC', currency: 'INR', exchange: 'NSE', sector: 'Energy', index: 'NIFTY50' },
   { symbol: 'ADANIENT', yahooSymbol: 'ADANIENT.NS', label: 'Adani Enterprises', base: 'ADANIENT', currency: 'INR', exchange: 'NSE', sector: 'Conglomerate', index: 'NIFTY50' },
   { symbol: 'TATASTEEL', yahooSymbol: 'TATASTEEL.NS', label: 'Tata Steel', base: 'TATASTEEL', currency: 'INR', exchange: 'NSE', sector: 'Metal', index: 'NIFTY50' },
@@ -61,7 +61,7 @@ export const INSTRUMENTS: Instrument[] = [
   { symbol: 'LTIM', yahooSymbol: 'LTIM.NS', label: 'LTIMindtree', base: 'LTIM', currency: 'INR', exchange: 'NSE', sector: 'IT', index: 'NIFTY50' },
   { symbol: 'PNB', yahooSymbol: 'PNB.NS', label: 'Punjab National Bank', base: 'PNB', currency: 'INR', exchange: 'NSE', sector: 'Banking', index: 'NIFTY50' },
   { symbol: 'MM', yahooSymbol: 'M%26M.NS', label: 'Mahindra and Mahindra', base: 'M and M', currency: 'INR', exchange: 'NSE', sector: 'Auto', index: 'NIFTY50' },
-  { symbol: 'ZOMATO', yahooSymbol: 'ZOMATO.NS', label: 'Zomato (Eternal Ltd)', base: 'ZOMATO', currency: 'INR', exchange: 'NSE', sector: 'Tech', index: 'NIFTY50' },
+  { symbol: 'ETERNAL', yahooSymbol: 'ETERNAL.NS', label: 'Eternal Ltd (Zomato)', base: 'ETERNAL', currency: 'INR', exchange: 'NSE', sector: 'Tech', index: 'NIFTY50' },
   { symbol: 'JIOFIN', yahooSymbol: 'JIOFIN.NS', label: 'Jio Financial Services', base: 'JIOFIN', currency: 'INR', exchange: 'NSE', sector: 'NBFC', index: 'NIFTY50' },
 ]
 

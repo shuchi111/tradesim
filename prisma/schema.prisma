@@ -14,7 +14,7 @@ model Account {
   createdAt       DateTime @default(now())
   lastSipDate     DateTime?
   sipAmountInr    Float    @default(20000)
-  sipDayOfMonth   Int      @default(5)  // IST day of month for SIP (e.g. 5 or 7)
+  sipDayOfMonth   Int      @default(7)  // IST day of month for SIP (e.g. 7)
   /// First IST month when SIP may run (subsequent month after start/reset)
   sipEligibleFrom DateTime?
 

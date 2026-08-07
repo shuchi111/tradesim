@@ -250,7 +250,7 @@ async def api_forecast(symbol: str, horizon: int = 10, sample_count: int = 5, in
     with probabilistic confidence bands (p10/p90 percentiles).
 
     Args:
-        symbol: Yahoo Finance ticker (e.g. RELIANCE.NS). Without .NS suffix
+        symbol: Yahoo Finance ticker (e.g. ^NSEI / NIFTY50). Without .NS suffix
                 for NSE stocks it's passed as-is (works for ^NSEI etc.)
         horizon: Number of future bars to predict (1-60, default 10)
         sample_count: Number of probabilistic sample paths (1-10, default 5)
@@ -328,9 +328,9 @@ async def api_refresh_cache(symbols: Optional[str] = None):
     if symbols:
         symbol_list = [s.strip() for s in symbols.split(',')]
     else:
-        # Default to key NIFTY50 stocks (limit to 15 for speed)
+        # Default: Nifty 50 index first, then key constituents (limit to 15 for speed)
         symbol_list = [
-            'RELIANCE.NS', 'TCS.NS', 'HDFCBANK.NS', 'INFY.NS', 'ICICIBANK.NS',
+            '^NSEI', 'TCS.NS', 'HDFCBANK.NS', 'INFY.NS', 'ICICIBANK.NS',
             'HINDUNILVR.NS', 'ITC.NS', 'SBIN.NS', 'BHARTIARTL.NS', 'KOTAKBANK.NS',
             'LT.NS', 'AXISBANK.NS', 'MARUTI.NS', 'SUNPHARMA.NS', 'TITAN.NS',
         ]
@@ -338,18 +338,19 @@ async def api_refresh_cache(symbols: Optional[str] = None):
     task_id = f'kronos-refresh-{int(_time.time())}'
 
     async def _run_refresh():
-        """Background task: compute and cache forecasts."""
+        """Background task: compute and cache 5d + 10d forecasts."""
         success = 0
         failed = 0
         for sym in symbol_list:
-            try:
-                result = await generate_forecast(sym, horizon=10, sample_count=3)
-                save_forecast_to_cache(sym, result)
-                success += 1
-                logger.info(f'Kronos cache: {sym} OK')
-            except Exception as e:
-                failed += 1
-                logger.error(f'Kronos cache: {sym} FAILED: {e}')
+            for horizon in (5, 10):
+                try:
+                    result = await generate_forecast(sym, horizon=horizon, sample_count=3)
+                    save_forecast_to_cache(sym, result)
+                    success += 1
+                    logger.info(f'Kronos cache: {sym} {horizon}d OK')
+                except Exception as e:
+                    failed += 1
+                    logger.error(f'Kronos cache: {sym} {horizon}d FAILED: {e}')
         logger.info(f'Kronos cache refresh complete: {success} OK, {failed} failed')
 
     asyncio.create_task(_run_refresh())

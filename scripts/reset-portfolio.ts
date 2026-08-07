@@ -1,6 +1,6 @@
 /**
  * Reset paper portfolio to ₹1,00,000 on the configured DB (Turso if set).
- * Clears open positions + pending orders; SIP starts on the 5th of next IST month.
+ * Clears open positions + pending orders; SIP on the 7th IST starting the subsequent month.
  *
  *   npx tsx --env-file=.env scripts/reset-portfolio.ts
  */

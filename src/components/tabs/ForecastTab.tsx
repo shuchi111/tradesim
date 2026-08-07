@@ -78,12 +78,19 @@ interface ForecastResponse {
   source?: string
 }
 
-const HORIZON_OPTIONS_DAILY = [5, 10, 20]
+const HORIZON_OPTIONS_DAILY = [5, 10]
 const HORIZON_HOURLY = 24
 const DISPLAY_LOOKBACK = 120
 
 type ViewMode = 'candles' | 'probabilistic'
 type IntervalMode = '1d' | '1h'
+
+/** Three horizons the AI Kronos tab always loads / generates. */
+const FORECAST_RUN_MODES: Array<{ interval: IntervalMode; horizon: number; label: string }> = [
+  { interval: '1d', horizon: 5, label: '5d' },
+  { interval: '1d', horizon: 10, label: '10d' },
+  { interval: '1h', horizon: HORIZON_HOURLY, label: '24h' },
+]
 
 // ---------------------------------------------------------------------------
 // Component
@@ -96,13 +103,7 @@ export default function ForecastTab({
   symbol: string
   refreshKey?: number
 }) {
-  // Prefer a cacheable equity when header is on NIFTY50 (Kronos cron caches .NS stocks)
-  const defaultSymbol =
-    initialSymbol === 'NIFTY50'
-      ? (INSTRUMENTS.find((i) => i.currency === 'INR' && i.symbol !== 'NIFTY50')?.symbol || initialSymbol)
-      : initialSymbol
-
-  const [symbol, setSymbol] = useState(defaultSymbol)
+  const [symbol, setSymbol] = useState(initialSymbol)
   const [horizon, setHorizon] = useState(10)
   const [interval, setInterval] = useState<IntervalMode>('1d')
   const [viewMode, setViewMode] = useState<ViewMode>('probabilistic')
@@ -111,6 +112,8 @@ export default function ForecastTab({
   const [error, setError] = useState<string | null>(null)
   const [data, setData] = useState<ForecastResponse | null>(null)
   const [cacheLabel, setCacheLabel] = useState<string | null>(null)
+  /** Preloaded cache/live results keyed by mode e.g. 1d-5, 1d-10, 1h-24 */
+  const [dataByMode, setDataByMode] = useState<Record<string, ForecastResponse>>({})
 
   const chartContainerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
@@ -313,40 +316,63 @@ export default function ForecastTab({
     return instrument?.yahooSymbol || sym
   }, [])
 
-  /** Auto-load morning Kronos cache (Turso / scanner) — no live model run. */
+  const modeKey = useCallback(
+    (modeInterval: IntervalMode, modeHorizon: number) =>
+      `${modeInterval}-${modeInterval === '1h' ? HORIZON_HOURLY : modeHorizon}`,
+    []
+  )
+
+  const activeModeKey = modeKey(interval, interval === '1h' ? HORIZON_HOURLY : horizon)
+
+  const fetchCached = useCallback(async (
+    sym: string,
+    modeInterval: IntervalMode,
+    modeHorizon: number
+  ): Promise<ForecastResponse | null> => {
+    const yahooSymbol = yahooForSymbol(sym)
+    const h = modeInterval === '1h' ? HORIZON_HOURLY : modeHorizon
+    const params = new URLSearchParams({ horizon: String(h), interval: modeInterval })
+    const pathSymbol = encodeURIComponent(decodeURIComponent(yahooSymbol))
+    const res = await fetch(`/api/forecast/cached/${pathSymbol}?${params}`)
+    if (!res.ok) return null
+    const json = (await res.json()) as ForecastResponse
+    if (!json.historical || !json.forecast || !json.metadata) return null
+    return {
+      ...json,
+      sample_paths: Array.isArray(json.sample_paths) ? json.sample_paths : [],
+    }
+  }, [yahooForSymbol])
+
+  /** Auto-load cached 5d + 10d daily + 24h hourly (Turso / scanner cache). */
   const loadCachedForecast = useCallback(async () => {
     setLoadingCached(true)
     setError(null)
 
-    const yahooSymbol = yahooForSymbol(symbol)
-    const h = interval === '1h' ? HORIZON_HOURLY : horizon
-    const params = new URLSearchParams({
-      horizon: String(h),
-      interval,
-    })
-
     try {
-      const pathSymbol = encodeURIComponent(decodeURIComponent(yahooSymbol))
-      const res = await fetch(`/api/forecast/cached/${pathSymbol}?${params}`)
-      if (!res.ok) {
-        setData(null)
-        setCacheLabel(null)
-        return
+      const loaded = await Promise.all(
+        FORECAST_RUN_MODES.map(async (m) => {
+          const json = await fetchCached(symbol, m.interval, m.horizon)
+          return json ? ([modeKey(m.interval, m.horizon), json] as const) : null
+        })
+      )
+
+      const next: Record<string, ForecastResponse> = {}
+      for (const entry of loaded) {
+        if (entry) next[entry[0]] = entry[1]
       }
-      const json = (await res.json()) as ForecastResponse
-      if (!json.historical || !json.forecast || !json.metadata) {
-        setData(null)
-        setCacheLabel(null)
-        return
-      }
-      setData({
-        ...json,
-        sample_paths: Array.isArray(json.sample_paths) ? json.sample_paths : [],
-      })
+      setDataByMode(next)
+
+      const fallback =
+        next[modeKey('1d', 10)] ??
+        next[modeKey('1d', 5)] ??
+        next[modeKey('1h', HORIZON_HOURLY)] ??
+        null
+      const active = next[activeModeKey] ?? fallback
+      setData(active)
       setCacheLabel(
-        json.cached_at_display
-          ? `Cached · ${json.cached_at_display}`
-          : json.cached
+        active?.cached_at_display
+          ? `Cached · ${active.cached_at_display}`
+          : active?.cached
             ? 'Cached forecast'
             : null
       )
@@ -356,59 +382,89 @@ export default function ForecastTab({
     } finally {
       setLoadingCached(false)
     }
-  }, [symbol, horizon, interval, yahooForSymbol])
+  }, [symbol, activeModeKey, fetchCached, modeKey])
 
-  // Auto-load cache on mount, symbol/horizon change, and after cron refreshKey
+  // Auto-load all three horizons on mount / symbol change / cron refresh
   useEffect(() => {
     loadCachedForecast()
   }, [loadCachedForecast, refreshKey])
 
-  // Sync header symbol when parent changes (skip NIFTY50 → keep equity default)
+  // Sync header symbol (including NIFTY50)
   useEffect(() => {
-    if (initialSymbol && initialSymbol !== 'NIFTY50') {
-      setSymbol(initialSymbol)
-    }
+    if (initialSymbol) setSymbol(initialSymbol)
   }, [initialSymbol])
 
-  // --- Live forecast (Generate / Regenerate) ---
+  // When user switches 5d / 10d / 24h, show preloaded result if we have it
+  useEffect(() => {
+    const cached = dataByMode[activeModeKey]
+    if (cached) {
+      setData(cached)
+      setCacheLabel(
+        cached.cached_at_display
+          ? `Cached · ${cached.cached_at_display}`
+          : cached.cached
+            ? 'Cached forecast'
+            : null
+      )
+    }
+  }, [activeModeKey, dataByMode])
+
+  const runLiveForecast = useCallback(async (
+    modeInterval: IntervalMode,
+    modeHorizon: number
+  ): Promise<ForecastResponse | null> => {
+    const yahooSymbol = yahooForSymbol(symbol)
+    const params = new URLSearchParams({ sample_count: '5' })
+    if (modeInterval === '1h') {
+      params.set('horizon', String(HORIZON_HOURLY))
+      params.set('interval', '1h')
+    } else {
+      params.set('horizon', String(modeHorizon))
+      params.set('interval', '1d')
+    }
+    const scannerBase = (process.env.NEXT_PUBLIC_SCANNER_URL || 'http://localhost:8000').replace(/\/$/, '')
+    const pathSymbol = encodeURIComponent(decodeURIComponent(yahooSymbol))
+    const res = await fetch(`${scannerBase}/api/forecast/${pathSymbol}?${params}`)
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({})) as { detail?: unknown }
+      const detail = errBody.detail
+      const message =
+        typeof detail === 'string'
+          ? detail
+          : Array.isArray(detail)
+            ? detail.map((d) => (typeof d === 'object' && d && 'msg' in d ? String((d as { msg: unknown }).msg) : String(d))).join('; ')
+            : `Server returned ${res.status}`
+      throw new Error(message)
+    }
+    return (await res.json()) as ForecastResponse
+  }, [symbol, yahooForSymbol])
+
+  /** Live Kronos run for all three horizons: 5d, 10d, and 24h. */
   const runForecast = useCallback(async () => {
     setLoading(true)
     setError(null)
     setCacheLabel(null)
 
-    const yahooSymbol = yahooForSymbol(symbol)
-
     try {
-      const params = new URLSearchParams({ sample_count: '5' })
-      if (interval === '1h') {
-        params.set('horizon', String(HORIZON_HOURLY))
-        params.set('interval', '1h')
-      } else {
-        params.set('horizon', String(horizon))
-        params.set('interval', '1d')
+      const results: Record<string, ForecastResponse> = {}
+      for (const m of FORECAST_RUN_MODES) {
+        const json = await runLiveForecast(m.interval, m.horizon)
+        if (json) results[modeKey(m.interval, m.horizon)] = json
       }
-      const scannerBase = (process.env.NEXT_PUBLIC_SCANNER_URL || 'http://localhost:8000').replace(/\/$/, '')
-      const pathSymbol = encodeURIComponent(decodeURIComponent(yahooSymbol))
-      const res = await fetch(`${scannerBase}/api/forecast/${pathSymbol}?${params}`)
-      if (!res.ok) {
-        const errBody = await res.json().catch(() => ({})) as { detail?: unknown }
-        const detail = errBody.detail
-        const message =
-          typeof detail === 'string'
-            ? detail
-            : Array.isArray(detail)
-              ? detail.map((d) => (typeof d === 'object' && d && 'msg' in d ? String((d as { msg: unknown }).msg) : String(d))).join('; ')
-              : `Server returned ${res.status}`
-        throw new Error(message)
+
+      if (Object.keys(results).length === 0) {
+        throw new Error('Forecast returned no data')
       }
-      const json: ForecastResponse = await res.json()
-      setData(json)
+
+      setDataByMode((prev) => ({ ...prev, ...results }))
+      const active = results[activeModeKey] ?? Object.values(results)[0]
+      setData(active)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Forecast failed')
     } finally {
       setLoading(false)
     }
-  }, [symbol, horizon, interval, yahooForSymbol])
+  }, [runLiveForecast, modeKey, activeModeKey])
 
   // ---------------------------------------------------------------------------
   // Helpers
@@ -548,12 +604,26 @@ export default function ForecastTab({
           </div>
         )}
 
+        <span className="text-xs text-slate-400">
+          {symbol === 'NIFTY50' ? 'NIFTY50: ' : ''}loads{' '}
+          <strong className="text-slate-300">5d</strong> +{' '}
+          <strong className="text-slate-300">10d</strong> +{' '}
+          <strong className="text-slate-300">24h</strong>
+          {dataByMode['1d-5'] ? ' · 5d ✓' : ''}
+          {dataByMode['1d-10'] ? ' · 10d ✓' : ''}
+          {dataByMode['1h-24'] ? ' · 24h ✓' : ''}
+        </span>
+
         <button
           onClick={runForecast}
           disabled={loading || loadingCached}
           className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {loading ? 'Generating...' : data ? 'Regenerate' : 'Generate Forecast'}
+          {loading
+            ? 'Generating 5d + 10d + 24h...'
+            : data
+              ? 'Regenerate All'
+              : 'Generate 5d + 10d + 24h'}
         </button>
 
         {cacheLabel && !loading && (
@@ -603,15 +673,15 @@ export default function ForecastTab({
             <div className="mb-2 text-3xl">🔮</div>
             <div className="mb-1 font-medium text-white">
               {loading
-                ? (data ? 'Generating new forecast...' : 'Loading AI model...')
+                ? 'Generating 5d + 10d + 24h forecasts...'
                 : 'Loading cached forecast...'}
             </div>
             <div className="text-xs text-slate-400">
               {loading
-                ? (data
-                  ? `Running ${data.horizon}-${data.interval === '1h' ? 'hour' : 'day'} forecast with 5 Monte Carlo paths`
-                  : 'First run downloads model weights (~100MB). This takes 10-30s.')
-                : 'From morning Kronos cron (Turso cache)'}
+                ? 'Running 5d, 10d, and 24h forecasts (5 Monte Carlo paths each)'
+                : loadingCached
+                  ? 'From morning Kronos cron (Turso cache)'
+                  : 'First run downloads model weights (~100MB). This takes 10-30s.'}
             </div>
             <div className="mt-3 inline-block h-2 w-32 overflow-hidden rounded-full bg-slate-700">
               <div className="h-full w-1/2 animate-pulse rounded-full bg-blue-500" />

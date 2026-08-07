@@ -50,7 +50,7 @@ export default function WalletTab({ refreshKey = 0 }: { refreshKey?: number }) {
   const handleReset = async () => {
     if (
       !confirm(
-        'Reset portfolio to ₹1,00,000? This clears open positions and pending orders. SIP of ₹20,000 will start on the 5th of next month.'
+        'Reset portfolio to ₹1,00,000? This clears open positions and pending orders. SIP of ₹20,000 starts on the 7th of next month (IST).'
       )
     ) {
       return
@@ -183,7 +183,7 @@ export default function WalletTab({ refreshKey = 0 }: { refreshKey?: number }) {
                   ₹{wallet.sipAmountInr.toLocaleString('en-IN')}
                 </div>
                 <div className="mt-1 text-xs text-[var(--text-secondary)]">
-                  On the {wallet.sipDayOfMonth ?? 5}th of each month (IST)
+                  On the {wallet.sipDayOfMonth ?? 7}th of each month (IST)
                 </div>
               </div>
             </div>
@@ -195,7 +195,7 @@ export default function WalletTab({ refreshKey = 0 }: { refreshKey?: number }) {
               </div>
               <div className="text-xs text-[var(--green)]">
                 Next deposit: {(() => {
-                  const day = wallet.sipDayOfMonth ?? 5
+                  const day = wallet.sipDayOfMonth ?? 7
                   const eligible = wallet.sipEligibleFrom
                     ? new Date(wallet.sipEligibleFrom)
                     : new Date()

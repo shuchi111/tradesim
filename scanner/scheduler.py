@@ -38,22 +38,23 @@ async def run_daily_kronos_cache():
         from kronos_cache import save_forecast_to_cache, init_kronos_cache
         init_kronos_cache()
 
-        # Key NIFTY50 stocks (limit to 15 — each takes ~8-15s on CPU)
+        # Nifty 50 index first, then key constituents (limit to 15 — each takes ~8-15s on CPU)
         symbols = [
-            'RELIANCE.NS', 'TCS.NS', 'HDFCBANK.NS', 'INFY.NS', 'ICICIBANK.NS',
+            '^NSEI', 'TCS.NS', 'HDFCBANK.NS', 'INFY.NS', 'ICICIBANK.NS',
             'HINDUNILVR.NS', 'ITC.NS', 'SBIN.NS', 'BHARTIARTL.NS', 'KOTAKBANK.NS',
             'LT.NS', 'AXISBANK.NS', 'MARUTI.NS', 'SUNPHARMA.NS', 'TITAN.NS',
         ]
-        logger.info(f"Starting daily Kronos cache refresh for {len(symbols)} symbols...")
+        logger.info(f"Starting daily Kronos cache refresh for {len(symbols)} symbols (5d + 10d)...")
         success, failed = 0, 0
         for sym in symbols:
-            try:
-                result = await generate_forecast(sym, horizon=10, sample_count=3)
-                save_forecast_to_cache(sym, result)
-                success += 1
-            except Exception as e:
-                failed += 1
-                logger.error(f'Kronos cache refresh: {sym} failed: {e}')
+            for horizon in (5, 10):
+                try:
+                    result = await generate_forecast(sym, horizon=horizon, sample_count=3)
+                    save_forecast_to_cache(sym, result)
+                    success += 1
+                except Exception as e:
+                    failed += 1
+                    logger.error(f'Kronos cache refresh: {sym} {horizon}d failed: {e}')
         logger.info(f"Daily Kronos cache refresh complete: {success} OK, {failed} failed")
     except Exception as e:
         logger.error(f"Daily Kronos cache refresh failed: {e}", exc_info=True)

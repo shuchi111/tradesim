@@ -30,7 +30,7 @@ async function main() {
       balance: STARTING_BALANCE,
       startingEquity: STARTING_BALANCE,
       sipAmountInr: 20000,
-      sipDayOfMonth: 5,
+      sipDayOfMonth: 7,
       sipEligibleFrom: firstOfNextIstMonth(),
     },
   })

@@ -61,7 +61,7 @@ export async function GET() {
   }
 }
 
-/** POST { action: "reset" } — reset to ₹1L and schedule SIP from next month. */
+/** POST { action: "reset" } — reset to ₹1L and schedule SIP from the 7th of next month. */
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}))
@@ -77,7 +77,7 @@ export async function POST(req: NextRequest) {
       data: {
         ...result,
         message:
-          'Portfolio reset to ₹1,00,000. Open positions cleared. SIP starts on the 5th of next month.',
+          `Portfolio reset to ₹1,00,000. Open positions cleared. SIP of ₹20,000 starts on the ${SIP_DAY_OF_MONTH}th of next month.`,
       },
     })
   } catch (error) {

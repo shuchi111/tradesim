@@ -32,7 +32,16 @@ export interface ConfidenceScoreResult {
  * Fetch the cached Kronos forecast for a symbol.
  * Returns null if unavailable — the Kronos component falls back to neutral (50%).
  */
-async function getKronosForConfidence(symbol: string): Promise<{ upside: number; vol: number; direction: string } | null> {
+async function getKronosForConfidence(symbol: string): Promise<{
+  upside: number
+  vol: number
+  direction: string
+  confidencePct: number
+  predictedChangePct: number
+  currentPrice: number
+  forecastFinalPrice: number
+  horizon: number
+} | null> {
   try {
     const { resolveKronosSummary } = await import('@/lib/ui-cache')
     const data = await resolveKronosSummary(symbol)
@@ -41,10 +50,81 @@ async function getKronosForConfidence(symbol: string): Promise<{ upside: number;
       upside: data.upside_probability ?? 50,
       vol: data.volatility_amplification ?? 50,
       direction: data.direction ?? 'neutral',
+      confidencePct: data.confidence_pct ?? 0,
+      predictedChangePct: data.predicted_change_pct ?? 0,
+      currentPrice: data.current_price ?? 0,
+      forecastFinalPrice: data.forecast_final_price ?? 0,
+      horizon: data.horizon ?? 10,
     }
   } catch {
     return null
   }
+}
+
+type FactorRow = { name: string; contribution: number; direction: string }
+
+/**
+ * Build Kronos ML Factor Analysis rows (magnitude always positive; badge carries bullish/bearish).
+ */
+function buildKronosFactors(k: NonNullable<Awaited<ReturnType<typeof getKronosForConfidence>>>): FactorRow[] {
+  const dir = (k.direction || 'neutral').toLowerCase()
+  const dirLabel = dir.toUpperCase()
+  const dirBias: FactorRow['direction'] =
+    dir === 'bullish' ? 'bullish' : dir === 'bearish' ? 'bearish' : 'neutral'
+
+  // 1) Direction — confidencePct × 0.15 (0 if neutral)
+  const directionContrib =
+    dirBias === 'neutral' ? 0 : Math.round(k.confidencePct * 0.15 * 10) / 10
+
+  // 2) Predicted move — |predictedChangePct| × 2, capped at 10
+  const moveContrib = Math.min(10, Math.round(Math.abs(k.predictedChangePct) * 2 * 10) / 10)
+  const moveSign = k.predictedChangePct >= 0 ? '+' : ''
+  const priceBit =
+    k.currentPrice > 0 && k.forecastFinalPrice > 0
+      ? ` (₹${Math.round(k.currentPrice)} -> ₹${Math.round(k.forecastFinalPrice)})`
+      : ''
+  const moveDirection: FactorRow['direction'] =
+    k.predictedChangePct > 1 ? 'bullish' : k.predictedChangePct < -1 ? 'bearish' : 'neutral'
+
+  // 3) Model confidence — (confidencePct − 50) × 0.2 when >50%
+  const confContrib = Math.max(0, Math.round((k.confidencePct - 50) * 0.2 * 10) / 10)
+
+  // 4) Volatility — amplified (>130%) or suppressed (<100%)
+  let volLabel = 'Normal'
+  let volDirection: FactorRow['direction'] = 'neutral'
+  let volContrib = 0
+  if (k.vol > 130) {
+    volLabel = 'Amplified'
+    volDirection = 'bearish'
+    volContrib = 5
+  } else if (k.vol < 100) {
+    volLabel = 'Suppressed'
+    volDirection = 'bullish'
+    volContrib = 3
+  }
+
+  return [
+    {
+      name: `Kronos AI Direction: ${dirLabel} (${Math.round(k.confidencePct)}% path agreement)`,
+      contribution: directionContrib,
+      direction: dirBias,
+    },
+    {
+      name: `Kronos Predicted Move: ${moveSign}${k.predictedChangePct.toFixed(1)}% over ${k.horizon}d${priceBit}`,
+      contribution: moveContrib,
+      direction: moveDirection,
+    },
+    {
+      name: `Kronos Model Confidence: ${Math.round(k.confidencePct)}% of paths agree (${dir})`,
+      contribution: confContrib,
+      direction: dirBias,
+    },
+    {
+      name: `Kronos Volatility Outlook: ${volLabel} (${Math.round(k.vol)}%)`,
+      contribution: volContrib,
+      direction: volDirection,
+    },
+  ].filter((f) => f.contribution > 0)
 }
 
 /**
@@ -114,11 +194,7 @@ export async function calculateConfidenceScore(symbol: string): Promise<Confiden
     recommendation,
     factors: [
       ...mlResult.factors,
-      ...(kronosData ? [{
-        name: 'Kronos AI Upside',
-        contribution: Math.round(kronosData.upside > 50 ? (kronosData.upside - 50) * 0.3 : (50 - kronosData.upside) * -0.3),
-        direction: kronosData.upside > 55 ? 'bullish' : kronosData.upside < 45 ? 'bearish' : 'neutral',
-      }] : []),
+      ...(kronosData ? buildKronosFactors(kronosData) : []),
     ],
     signal: strategySignal.signal,
   }

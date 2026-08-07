@@ -298,6 +298,25 @@ model StrategyPerf {
   @@map("strategy_perf")
 }
 
+/// Per-symbol historical win rate from single-symbol long-horizon backtests (AI Score 10%).
+model SymbolBacktestPerf {
+  id           Int      @id @default(autoincrement())
+  symbol       String   @unique
+  winRate      Float    @default(50)
+  totalTrades  Int      @default(0)
+  wins         Int      @default(0)
+  losses       Int      @default(0)
+  avgPnlPct    Float    @default(0)
+  rangeStart   DateTime
+  rangeEnd     DateTime
+  years        Float    @default(10)
+  backtestId   Int?
+  updatedAt    DateTime @default(now())
+
+  @@index([updatedAt])
+  @@map("symbol_backtest_perf")
+}
+
 model RiskSnapshot {
   id             Int      @id @default(autoincrement())
   snapshotDate   DateTime

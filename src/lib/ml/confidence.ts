@@ -1,5 +1,6 @@
 import { extractFeatures, heuristicPrediction, type TradeFeatures } from './features'
 import { generateMultiStrategySignal } from '../strategy'
+import { getHistoricalWinRateForConfidence } from './historical-win-rate'
 
 /**
  * Composite Confidence Score
@@ -163,8 +164,9 @@ export async function calculateConfidenceScore(symbol: string): Promise<Confiden
   // 4. Market regime (15%)
   const regimeScore = calculateRegimeScore(featureResult.features)
 
-  // 5. Historical win rate (10%) — derived from strategy confidence as proxy
-  const histScore = Math.min(100, strategySignal.confidence * 0.8 + 10)
+  // 5. Historical win rate (10%) — from cached single-symbol long-horizon backtests
+  const hist = await getHistoricalWinRateForConfidence(symbol)
+  const histScore = hist.score
 
   // Weighted combination
   const overallConfidence = Math.round(
@@ -189,7 +191,7 @@ export async function calculateConfidenceScore(symbol: string): Promise<Confiden
       mlPrediction: { score: mlScore, weight: 0.25, detail: `ML probability: ${mlScore}%` },
       kronosAI: { score: kronosScore, weight: 0.15, detail: kronosDetail },
       marketRegime: { score: regimeScore, weight: 0.15, detail: getRegimeDetail(featureResult.features) },
-      historicalWinRate: { score: histScore, weight: 0.10, detail: 'Derived from strategy backtest' },
+      historicalWinRate: { score: histScore, weight: 0.10, detail: hist.detail },
     },
     recommendation,
     factors: [

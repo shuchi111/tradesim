@@ -239,7 +239,7 @@ export default function ConfidenceTab({ refreshKey = 0 }: { refreshKey?: number 
                         {f.direction}
                       </span>
                       <span className="flex-1 text-[var(--text-primary)]">{f.name}</span>
-                      <span className="text-[var(--text-secondary)]">+{f.contribution.toFixed(1)}</span>
+                      <span className="text-[var(--text-secondary)]">+{Math.abs(f.contribution).toFixed(1)}</span>
                     </div>
                   ))}
                 </div>

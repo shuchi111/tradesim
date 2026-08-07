@@ -116,7 +116,8 @@ export async function calculateConfidenceScore(symbol: string): Promise<Confiden
       ...mlResult.factors,
       ...(kronosData ? [{
         name: 'Kronos AI Upside',
-        contribution: Math.round(kronosData.upside > 50 ? (kronosData.upside - 50) * 0.3 : (50 - kronosData.upside) * -0.3),
+        // Magnitude only (same as ML factors) — UI always shows "+"; direction badge carries sign
+        contribution: Math.round(Math.abs(kronosData.upside - 50) * 0.3),
         direction: kronosData.upside > 55 ? 'bullish' : kronosData.upside < 45 ? 'bearish' : 'neutral',
       }] : []),
     ],

@@ -13,8 +13,31 @@ interface AccountStats {
   equity: number
   positionsValue: number
   sipAmountInr: number
+  sipDayOfMonth?: number
+  sipEligibleFrom?: string | null
   lastSipDate: string | null
   totalDeposited?: number
+}
+
+function formatSipStatus(stats: AccountStats): string {
+  if (stats.lastSipDate) {
+    return `Last: ${new Date(stats.lastSipDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`
+  }
+
+  const sipDay = stats.sipDayOfMonth ?? 7
+  const now = new Date()
+  const istDay = Number(
+    new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', day: 'numeric' }).format(now)
+  )
+  const istMonth = new Intl.DateTimeFormat('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    month: 'short',
+  }).format(now)
+
+  if (istDay >= sipDay) {
+    return `Due: ${sipDay} ${istMonth} (on auto-trade)`
+  }
+  return `Next: ${sipDay} ${istMonth}`
 }
 
 interface ClosedStats {
@@ -116,9 +139,7 @@ export default function StatsBar({ refreshKey }: StatsBarProps) {
         <div className="flex flex-col">
           <span className="text-xs text-[var(--text-secondary)]">📅 SIP ₹{stats.sipAmountInr.toLocaleString('en-IN')}/mo</span>
           <span className="text-xs font-medium tabular-nums text-[var(--green)]">
-            {stats.lastSipDate
-              ? `Last: ${new Date(stats.lastSipDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`
-              : 'Pending'}
+            {formatSipStatus(stats)}
           </span>
         </div>
       )}

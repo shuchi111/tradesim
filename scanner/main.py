@@ -250,7 +250,7 @@ async def api_forecast(symbol: str, horizon: int = 10, sample_count: int = 5, in
     with probabilistic confidence bands (p10/p90 percentiles).
 
     Args:
-        symbol: Yahoo Finance ticker (e.g. RELIANCE.NS). Without .NS suffix
+        symbol: Yahoo Finance ticker (e.g. ^NSEI / NIFTY50). Without .NS suffix
                 for NSE stocks it's passed as-is (works for ^NSEI etc.)
         horizon: Number of future bars to predict (1-60, default 10)
         sample_count: Number of probabilistic sample paths (1-10, default 5)
@@ -328,9 +328,9 @@ async def api_refresh_cache(symbols: Optional[str] = None):
     if symbols:
         symbol_list = [s.strip() for s in symbols.split(',')]
     else:
-        # Default to key NIFTY50 stocks (limit to 15 for speed)
+        # Default: Nifty 50 index first, then key constituents (limit to 15 for speed)
         symbol_list = [
-            'RELIANCE.NS', 'TCS.NS', 'HDFCBANK.NS', 'INFY.NS', 'ICICIBANK.NS',
+            '^NSEI', 'TCS.NS', 'HDFCBANK.NS', 'INFY.NS', 'ICICIBANK.NS',
             'HINDUNILVR.NS', 'ITC.NS', 'SBIN.NS', 'BHARTIARTL.NS', 'KOTAKBANK.NS',
             'LT.NS', 'AXISBANK.NS', 'MARUTI.NS', 'SUNPHARMA.NS', 'TITAN.NS',
         ]

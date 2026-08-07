@@ -5,8 +5,8 @@ import { getInstrument, INSTRUMENTS } from '@/types'
 // Starting balance is ₹1,00,000 INR (1 Lakh) — stored natively in INR.
 export const STARTING_BALANCE = 100000
 export const SIP_AMOUNT_INR = 20000
-/** SIP deposits on this day of each month (IST), starting the month after portfolio start/reset. */
-export const SIP_DAY_OF_MONTH = 5
+/** SIP deposits on this day of each month (IST), on or after this day once eligible. */
+export const SIP_DAY_OF_MONTH = 7
 /** Keep this fraction of starting equity as uninvestable cash reserve. */
 export const CASH_RESERVE_PCT = 0.30
 /** Hard cap per new position so capital is not concentrated in one stock. */
@@ -27,6 +27,12 @@ export function getIstParts(date: Date = new Date()): { year: number; month: num
   }).formatToParts(date)
   const get = (type: string) => Number(parts.find((p) => p.type === type)?.value)
   return { year: get('year'), month: get('month'), day: get('day') }
+}
+
+/** First instant of the current IST calendar month. */
+export function firstOfCurrentIstMonth(from: Date = new Date()): Date {
+  const { year, month } = getIstParts(from)
+  return new Date(Date.UTC(year, month - 1, 1, 6, 30, 0))
 }
 
 /** First instant of the next IST calendar month (approx. via UTC noon on day 1). */
@@ -170,28 +176,49 @@ export async function ensureAccount() {
         startingEquity: STARTING_BALANCE,
         sipAmountInr: SIP_AMOUNT_INR,
         sipDayOfMonth: SIP_DAY_OF_MONTH,
-        sipEligibleFrom: firstOfNextIstMonth(),
+        sipEligibleFrom: firstOfCurrentIstMonth(),
       },
     })
-  } else if (!account.sipEligibleFrom) {
-    // Backfill: if SIP already ran, stay eligible; otherwise start next IST month
-    const alreadyStarted = !!(account.lastSipDate || (account.totalDeposited ?? 0) > 0)
-    account = await prisma.account.update({
-      where: { id: 1 },
-      data: {
-        sipDayOfMonth: account.sipDayOfMonth || SIP_DAY_OF_MONTH,
-        sipEligibleFrom: alreadyStarted
-          ? new Date('2000-01-01T00:00:00.000Z')
-          : firstOfNextIstMonth(),
-      },
-    })
+  } else {
+    const ist = getIstParts()
+    const updates: {
+      sipDayOfMonth?: number
+      sipEligibleFrom?: Date
+    } = {}
+
+    if (account.sipDayOfMonth !== SIP_DAY_OF_MONTH) {
+      updates.sipDayOfMonth = SIP_DAY_OF_MONTH
+    }
+
+    if (!account.sipEligibleFrom) {
+      const alreadyStarted = !!(account.lastSipDate || (account.totalDeposited ?? 0) > 0)
+      updates.sipEligibleFrom = alreadyStarted
+        ? new Date('2000-01-01T00:00:00.000Z')
+        : firstOfCurrentIstMonth()
+    } else if (!account.lastSipDate) {
+      // Pending first SIP but eligibility was pushed to a future month — allow this month's 7th
+      const eligible = getIstParts(account.sipEligibleFrom)
+      if (
+        eligible.year > ist.year ||
+        (eligible.year === ist.year && eligible.month > ist.month)
+      ) {
+        updates.sipEligibleFrom = firstOfCurrentIstMonth()
+      }
+    }
+
+    if (Object.keys(updates).length > 0) {
+      account = await prisma.account.update({
+        where: { id: 1 },
+        data: updates,
+      })
+    }
   }
   return account
 }
 
 /**
  * Reset portfolio to ₹1,00,000, clear open positions/pending orders,
- * and schedule SIP (₹20,000) from the subsequent IST month on sipDayOfMonth.
+ * and schedule SIP (₹20,000) from the current IST month on sipDayOfMonth (e.g. 7th).
  * Closed trade history is kept for analytics.
  */
 export async function resetPortfolio(): Promise<{
@@ -203,7 +230,7 @@ export async function resetPortfolio(): Promise<{
   await prisma.position.deleteMany()
   await prisma.order.deleteMany({ where: { status: 'pending' } })
 
-  const sipEligibleFrom = firstOfNextIstMonth()
+  const sipEligibleFrom = firstOfCurrentIstMonth()
   const account = await prisma.account.upsert({
     where: { id: 1 },
     create: {
@@ -230,7 +257,7 @@ export async function resetPortfolio(): Promise<{
   await createNotification(
     'system',
     'Portfolio Reset',
-    `Portfolio reset to ₹${STARTING_BALANCE.toLocaleString('en-IN')}. SIP of ₹${SIP_AMOUNT_INR.toLocaleString('en-IN')} starts on the ${SIP_DAY_OF_MONTH}th of next month (not this month).`,
+    `Portfolio reset to ₹${STARTING_BALANCE.toLocaleString('en-IN')}. SIP of ₹${SIP_AMOUNT_INR.toLocaleString('en-IN')} on the ${SIP_DAY_OF_MONTH}th of each month (IST); first deposit on or after the ${SIP_DAY_OF_MONTH}th this month.`,
     'info'
   )
 
@@ -248,7 +275,7 @@ export async function resetPortfolio(): Promise<{
 
 /**
  * Deposit SIP on/after the configured IST day of month, once per IST month,
- * only after `sipEligibleFrom` (subsequent month after start/reset).
+ * only after `sipEligibleFrom` (start of the eligible IST month).
  *
  * @returns the amount deposited in INR, or 0 if no deposit was due.
  */
@@ -258,10 +285,10 @@ export async function processSipDeposit(): Promise<number> {
   const ist = getIstParts(now)
   const sipDay = account.sipDayOfMonth || SIP_DAY_OF_MONTH
 
-  // Fixed calendar day (e.g. 5th) — not before that day in the month
+  // Fixed calendar day (e.g. 7th) — not before that day in the month
   if (ist.day < sipDay) return 0
 
-  // Not eligible until subsequent month after start/reset
+  // Not eligible until the configured eligible IST month
   const eligibleFrom = account.sipEligibleFrom
     ? getIstParts(account.sipEligibleFrom)
     : null

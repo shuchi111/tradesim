@@ -38,9 +38,9 @@ async def run_daily_kronos_cache():
         from kronos_cache import save_forecast_to_cache, init_kronos_cache
         init_kronos_cache()
 
-        # Key NIFTY50 stocks (limit to 15 — each takes ~8-15s on CPU)
+        # Nifty 50 index first, then key constituents (limit to 15 — each takes ~8-15s on CPU)
         symbols = [
-            'RELIANCE.NS', 'TCS.NS', 'HDFCBANK.NS', 'INFY.NS', 'ICICIBANK.NS',
+            '^NSEI', 'TCS.NS', 'HDFCBANK.NS', 'INFY.NS', 'ICICIBANK.NS',
             'HINDUNILVR.NS', 'ITC.NS', 'SBIN.NS', 'BHARTIARTL.NS', 'KOTAKBANK.NS',
             'LT.NS', 'AXISBANK.NS', 'MARUTI.NS', 'SUNPHARMA.NS', 'TITAN.NS',
         ]

@@ -132,7 +132,7 @@ export default function StrategyTab({ onTradeComplete, refreshKey = 0 }: Strateg
             <div>📏 <b>Position Sizing:</b> 4–8% of equity, hard cap <span className="text-[var(--green)]">₹25,000</span>/trade</div>
             <div>🔢 <b>Quantity:</b> Whole shares only (no fractional qty)</div>
             <div>📅 <b>Daily Loss Limit:</b> Stop if daily loss &gt; <span className="text-[var(--red)]">2.5%</span> of equity</div>
-            <div>🏦 <b>SIP:</b> ₹20,000 on the <b>7th</b> IST, each month from the current month</div>
+            <div>🏦 <b>SIP:</b> ₹20,000 on the <b>7th</b> IST, starting the month after reset</div>
             <div>🔍 <b>Scans:</b> All 50 NIFTY stocks every 2 minutes</div>
             <div>🎯 <b>Min Confidence:</b> 70% (multi-strategy) / 80% (single strategy)</div>
           </div>

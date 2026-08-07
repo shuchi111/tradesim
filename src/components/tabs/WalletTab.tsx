@@ -50,7 +50,7 @@ export default function WalletTab({ refreshKey = 0 }: { refreshKey?: number }) {
   const handleReset = async () => {
     if (
       !confirm(
-        'Reset portfolio to ₹1,00,000? This clears open positions and pending orders. SIP of ₹20,000 runs on the 7th of each month (IST).'
+        'Reset portfolio to ₹1,00,000? This clears open positions and pending orders. SIP of ₹20,000 starts on the 7th of next month (IST).'
       )
     ) {
       return

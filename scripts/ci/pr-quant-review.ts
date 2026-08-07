@@ -337,7 +337,7 @@ function renderMarkdown(
   lines.push("| Guardrail | Expected |")
   lines.push("|-----------|----------|")
   lines.push("| Starting capital | ₹1,00,000 |")
-  lines.push("| SIP | ₹20,000 on 5th IST, subsequent month after reset |")
+  lines.push("| SIP | ₹20,000 on 7th IST, subsequent month after reset |")
   lines.push("| Cash reserve | 30% of starting equity (min wallet) |")
   lines.push("| Max per trade | ₹25,000 hard cap |")
   lines.push("| Quantity | Whole shares only (no fractions) |")

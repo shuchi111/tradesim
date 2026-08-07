@@ -8,7 +8,7 @@ const prisma = new PrismaClient({ adapter })
 
 const STARTING_BALANCE = 100000 // ₹1,00,000 (1 Lakh INR)
 
-function firstOfCurrentIstMonth(from: Date = new Date()): Date {
+function firstOfNextIstMonth(from: Date = new Date()): Date {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Kolkata',
     year: 'numeric',
@@ -16,7 +16,9 @@ function firstOfCurrentIstMonth(from: Date = new Date()): Date {
   }).formatToParts(from)
   const year = Number(parts.find((p) => p.type === 'year')?.value)
   const month = Number(parts.find((p) => p.type === 'month')?.value)
-  return new Date(Date.UTC(year, month - 1, 1, 6, 30, 0))
+  const nextYear = month === 12 ? year + 1 : year
+  const nextMonth = month === 12 ? 1 : month + 1
+  return new Date(Date.UTC(nextYear, nextMonth - 1, 1, 6, 30, 0))
 }
 
 async function main() {
@@ -29,7 +31,7 @@ async function main() {
       startingEquity: STARTING_BALANCE,
       sipAmountInr: 20000,
       sipDayOfMonth: 7,
-      sipEligibleFrom: firstOfCurrentIstMonth(),
+      sipEligibleFrom: firstOfNextIstMonth(),
     },
   })
 

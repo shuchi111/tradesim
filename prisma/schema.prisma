@@ -15,7 +15,7 @@ model Account {
   lastSipDate     DateTime?
   sipAmountInr    Float    @default(20000)
   sipDayOfMonth   Int      @default(7)  // IST day of month for SIP (e.g. 7)
-  /// First IST month when SIP may run (current month after start/reset)
+  /// First IST month when SIP may run (subsequent month after start/reset)
   sipEligibleFrom DateTime?
 
   @@map("accounts")

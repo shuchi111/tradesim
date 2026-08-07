@@ -235,11 +235,15 @@ export default function ConfidenceTab({ refreshKey = 0 }: { refreshKey?: number 
                 <div className="space-y-1">
                   {selected.factors.map((f, i) => (
                     <div key={i} className="flex items-center gap-2 rounded bg-[var(--bg-tertiary)] px-3 py-1 text-xs">
-                      <span className={`w-16 rounded px-1 text-center text-[10px] font-medium ${f.direction === 'bullish' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                      <span className={`w-16 rounded px-1 text-center text-[10px] font-medium ${
+                        f.direction === 'bullish' ? 'bg-green-500/20 text-green-400'
+                          : f.direction === 'bearish' ? 'bg-red-500/20 text-red-400'
+                            : 'bg-gray-500/20 text-gray-400'
+                      }`}>
                         {f.direction}
                       </span>
                       <span className="flex-1 text-[var(--text-primary)]">{f.name}</span>
-                      <span className="text-[var(--text-secondary)]">+{Math.abs(f.contribution).toFixed(1)}</span>
+                      <span className="text-green-400">+{Math.abs(f.contribution).toFixed(1)}</span>
                     </div>
                   ))}
                 </div>

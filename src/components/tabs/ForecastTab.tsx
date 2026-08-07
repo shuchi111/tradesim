@@ -78,12 +78,19 @@ interface ForecastResponse {
   source?: string
 }
 
-const HORIZON_OPTIONS_DAILY = [5, 10, 20]
+const HORIZON_OPTIONS_DAILY = [5, 10]
 const HORIZON_HOURLY = 24
 const DISPLAY_LOOKBACK = 120
 
 type ViewMode = 'candles' | 'probabilistic'
 type IntervalMode = '1d' | '1h'
+
+/** Three horizons the AI Kronos tab always loads / generates. */
+const FORECAST_RUN_MODES: Array<{ interval: IntervalMode; horizon: number; label: string }> = [
+  { interval: '1d', horizon: 5, label: '5d' },
+  { interval: '1d', horizon: 10, label: '10d' },
+  { interval: '1h', horizon: HORIZON_HOURLY, label: '24h' },
+]
 
 // ---------------------------------------------------------------------------
 // Component
@@ -105,7 +112,7 @@ export default function ForecastTab({
   const [error, setError] = useState<string | null>(null)
   const [data, setData] = useState<ForecastResponse | null>(null)
   const [cacheLabel, setCacheLabel] = useState<string | null>(null)
-  /** Preloaded cache/live results keyed by mode e.g. 1d-10, 1h-24 */
+  /** Preloaded cache/live results keyed by mode e.g. 1d-5, 1d-10, 1h-24 */
   const [dataByMode, setDataByMode] = useState<Record<string, ForecastResponse>>({})
 
   const chartContainerRef = useRef<HTMLDivElement>(null)
@@ -336,23 +343,31 @@ export default function ForecastTab({
     }
   }, [yahooForSymbol])
 
-  /** Auto-load cached 10d daily + 24h hourly (Turso / scanner cache). */
+  /** Auto-load cached 5d + 10d daily + 24h hourly (Turso / scanner cache). */
   const loadCachedForecast = useCallback(async () => {
     setLoadingCached(true)
     setError(null)
 
     try {
-      const [daily10, hourly24] = await Promise.all([
-        fetchCached(symbol, '1d', 10),
-        fetchCached(symbol, '1h', HORIZON_HOURLY),
-      ])
+      const loaded = await Promise.all(
+        FORECAST_RUN_MODES.map(async (m) => {
+          const json = await fetchCached(symbol, m.interval, m.horizon)
+          return json ? ([modeKey(m.interval, m.horizon), json] as const) : null
+        })
+      )
 
       const next: Record<string, ForecastResponse> = {}
-      if (daily10) next[modeKey('1d', 10)] = daily10
-      if (hourly24) next[modeKey('1h', HORIZON_HOURLY)] = hourly24
+      for (const entry of loaded) {
+        if (entry) next[entry[0]] = entry[1]
+      }
       setDataByMode(next)
 
-      const active = next[activeModeKey] ?? daily10 ?? hourly24 ?? null
+      const fallback =
+        next[modeKey('1d', 10)] ??
+        next[modeKey('1d', 5)] ??
+        next[modeKey('1h', HORIZON_HOURLY)] ??
+        null
+      const active = next[activeModeKey] ?? fallback
       setData(active)
       setCacheLabel(
         active?.cached_at_display
@@ -369,7 +384,7 @@ export default function ForecastTab({
     }
   }, [symbol, activeModeKey, fetchCached, modeKey])
 
-  // Auto-load both horizons on mount / symbol change / cron refresh
+  // Auto-load all three horizons on mount / symbol change / cron refresh
   useEffect(() => {
     loadCachedForecast()
   }, [loadCachedForecast, refreshKey])
@@ -379,7 +394,7 @@ export default function ForecastTab({
     if (initialSymbol) setSymbol(initialSymbol)
   }, [initialSymbol])
 
-  // When user switches Daily 10d ↔ 24h, show preloaded result if we have it
+  // When user switches 5d / 10d / 24h, show preloaded result if we have it
   useEffect(() => {
     const cached = dataByMode[activeModeKey]
     if (cached) {
@@ -424,23 +439,15 @@ export default function ForecastTab({
     return (await res.json()) as ForecastResponse
   }, [symbol, yahooForSymbol])
 
-  /** Live Kronos run for current mode, or both 10d + 24h when symbol is NIFTY50. */
+  /** Live Kronos run for all three horizons: 5d, 10d, and 24h. */
   const runForecast = useCallback(async () => {
     setLoading(true)
     setError(null)
     setCacheLabel(null)
 
     try {
-      const modes: Array<{ interval: IntervalMode; horizon: number }> =
-        symbol === 'NIFTY50'
-          ? [
-              { interval: '1d', horizon: 10 },
-              { interval: '1h', horizon: HORIZON_HOURLY },
-            ]
-          : [{ interval, horizon: interval === '1h' ? HORIZON_HOURLY : horizon }]
-
       const results: Record<string, ForecastResponse> = {}
-      for (const m of modes) {
+      for (const m of FORECAST_RUN_MODES) {
         const json = await runLiveForecast(m.interval, m.horizon)
         if (json) results[modeKey(m.interval, m.horizon)] = json
       }
@@ -457,7 +464,7 @@ export default function ForecastTab({
     } finally {
       setLoading(false)
     }
-  }, [symbol, interval, horizon, runLiveForecast, modeKey, activeModeKey])
+  }, [runLiveForecast, modeKey, activeModeKey])
 
   // ---------------------------------------------------------------------------
   // Helpers
@@ -597,14 +604,15 @@ export default function ForecastTab({
           </div>
         )}
 
-        {symbol === 'NIFTY50' && (
-          <span className="text-xs text-slate-400">
-            NIFTY50: loads <strong className="text-slate-300">10d daily</strong> +{' '}
-            <strong className="text-slate-300">24h</strong>
-            {dataByMode['1d-10'] ? ' · 10d ✓' : ''}
-            {dataByMode['1h-24'] ? ' · 24h ✓' : ''}
-          </span>
-        )}
+        <span className="text-xs text-slate-400">
+          {symbol === 'NIFTY50' ? 'NIFTY50: ' : ''}loads{' '}
+          <strong className="text-slate-300">5d</strong> +{' '}
+          <strong className="text-slate-300">10d</strong> +{' '}
+          <strong className="text-slate-300">24h</strong>
+          {dataByMode['1d-5'] ? ' · 5d ✓' : ''}
+          {dataByMode['1d-10'] ? ' · 10d ✓' : ''}
+          {dataByMode['1h-24'] ? ' · 24h ✓' : ''}
+        </span>
 
         <button
           onClick={runForecast}
@@ -612,8 +620,10 @@ export default function ForecastTab({
           className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {loading
-            ? symbol === 'NIFTY50' ? 'Generating 10d + 24h...' : 'Generating...'
-            : data ? 'Regenerate' : symbol === 'NIFTY50' ? 'Generate 10d + 24h' : 'Generate Forecast'}
+            ? 'Generating 5d + 10d + 24h...'
+            : data
+              ? 'Regenerate All'
+              : 'Generate 5d + 10d + 24h'}
         </button>
 
         {cacheLabel && !loading && (
@@ -663,15 +673,15 @@ export default function ForecastTab({
             <div className="mb-2 text-3xl">🔮</div>
             <div className="mb-1 font-medium text-white">
               {loading
-                ? (data ? 'Generating new forecast...' : 'Loading AI model...')
+                ? 'Generating 5d + 10d + 24h forecasts...'
                 : 'Loading cached forecast...'}
             </div>
             <div className="text-xs text-slate-400">
               {loading
-                ? (data
-                  ? `Running ${data.horizon}-${data.interval === '1h' ? 'hour' : 'day'} forecast with 5 Monte Carlo paths`
-                  : 'First run downloads model weights (~100MB). This takes 10-30s.')
-                : 'From morning Kronos cron (Turso cache)'}
+                ? 'Running 5d, 10d, and 24h forecasts (5 Monte Carlo paths each)'
+                : loadingCached
+                  ? 'From morning Kronos cron (Turso cache)'
+                  : 'First run downloads model weights (~100MB). This takes 10-30s.'}
             </div>
             <div className="mt-3 inline-block h-2 w-32 overflow-hidden rounded-full bg-slate-700">
               <div className="h-full w-1/2 animate-pulse rounded-full bg-blue-500" />

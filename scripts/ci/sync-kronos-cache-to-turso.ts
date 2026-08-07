@@ -33,10 +33,11 @@ async function main() {
     )
     .all() as KronosRow[]
 
-  // Keep latest per symbol
+  // Keep latest per symbol+horizon (5d and 10d coexist)
   const latest = new Map<string, KronosRow>()
   for (const row of rows) {
-    if (!latest.has(row.symbol)) latest.set(row.symbol, row)
+    const key = `${row.symbol}|${row.horizon || 10}`
+    if (!latest.has(key)) latest.set(key, row)
   }
 
   let saved = 0
@@ -56,16 +57,17 @@ async function main() {
         ? (forecast as { metadata: { sample_count: number } }).metadata.sample_count
         : 5
 
+    const horizon = row.horizon || 10
     await saveForecastCache({
       symbol: row.symbol,
-      horizon: row.horizon || 10,
+      horizon,
       interval: '1d',
       sampleCount,
       forecast,
       generatedAt: new Date(row.created_at.includes('T') ? row.created_at : row.created_at.replace(' ', 'T') + 'Z'),
     })
     saved++
-    console.log(`[sync-kronos] saved ${row.symbol}`)
+    console.log(`[sync-kronos] saved ${row.symbol} ${horizon}d`)
   }
 
   db.close()

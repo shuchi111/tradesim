@@ -119,6 +119,58 @@ export default function HoldingsTab({ refreshKey, onTradeComplete }: HoldingsTab
   const colHeader =
     'px-3 py-2 text-[var(--text-secondary)] font-medium whitespace-nowrap'
 
+  /** Trade History = open positions + closed trades, with OPEN / CLOSED status. */
+  type HistoryRow = {
+    key: string
+    status: 'OPEN' | 'CLOSED'
+    symbol: string
+    openedAt: string
+    closedAt: string | null
+    entryPrice: number
+    exitPrice: number
+    quantity: number
+    pnl: number
+    pnlPct: number
+    held: string
+  }
+
+  const historyRows: HistoryRow[] = [
+    ...positions.map((pos) => {
+      const mark = prices[pos.symbol]?.native ?? pos.entryPrice
+      const pnl = (mark - pos.entryPrice) * pos.quantity
+      const pnlPct = pos.entryPrice > 0 ? ((mark - pos.entryPrice) / pos.entryPrice) * 100 : 0
+      return {
+        key: `open-${pos.id}`,
+        status: 'OPEN' as const,
+        symbol: pos.symbol,
+        openedAt: pos.createdAt,
+        closedAt: null,
+        entryPrice: pos.entryPrice,
+        exitPrice: mark,
+        quantity: pos.quantity,
+        pnl,
+        pnlPct,
+        held: formatHeldFromMs(Date.now() - new Date(pos.createdAt).getTime()),
+      }
+    }),
+    ...closedTrades.map((t) => ({
+      key: `closed-${t.id}`,
+      status: 'CLOSED' as const,
+      symbol: t.symbol,
+      openedAt: t.openedAt,
+      closedAt: t.closedAt,
+      entryPrice: t.entryPrice,
+      exitPrice: t.exitPrice,
+      quantity: t.quantity,
+      pnl: t.pnl,
+      pnlPct: t.pnlPct,
+      held:
+        formatHoldMinutes(t.holdDuration) !== '—'
+          ? formatHoldMinutes(t.holdDuration)
+          : formatHeldFromMs(new Date(t.closedAt).getTime() - new Date(t.openedAt).getTime()),
+    })),
+  ]
+
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       <div className="flex gap-1 border-b border-[var(--border-color)] px-3 py-2">
@@ -128,7 +180,7 @@ export default function HoldingsTab({ refreshKey, onTradeComplete }: HoldingsTab
             {t === 'open'
               ? `Open Positions (${positions.length})`
               : t === 'closed'
-                ? `Trade History (${closedTrades.length})`
+                ? `Trade History (${historyRows.length})`
                 : 'All Nifty 50 Stocks'}
           </button>
         ))}
@@ -203,38 +255,39 @@ export default function HoldingsTab({ refreshKey, onTradeComplete }: HoldingsTab
               </tr>
             </thead>
             <tbody>
-              {closedTrades.length === 0 ? (
+              {historyRows.length === 0 ? (
                 <tr><td colSpan={12} className="py-8 text-center text-[var(--text-secondary)]">No trades yet</td></tr>
-              ) : closedTrades.map((t) => {
-                const inst = getInstrument(t.symbol)
-                const value = t.exitPrice * t.quantity
-                const status = (t.side || 'long').toLowerCase() === 'short' ? 'BUY' : 'SELL'
-                const held =
-                  formatHoldMinutes(t.holdDuration) !== '—'
-                    ? formatHoldMinutes(t.holdDuration)
-                    : formatHeldFromMs(new Date(t.closedAt).getTime() - new Date(t.openedAt).getTime())
+              ) : historyRows.map((row) => {
+                const inst = getInstrument(row.symbol)
+                const value = row.exitPrice * row.quantity
                 return (
-                  <tr key={t.id} className="border-b border-[var(--border-color)] hover:bg-[var(--bg-secondary)]">
+                  <tr key={row.key} className="border-b border-[var(--border-color)] hover:bg-[var(--bg-secondary)]">
                     <td className="px-3 py-2">
-                      <span className="rounded bg-[var(--blue)]/20 px-1.5 py-0.5 text-[10px] font-semibold text-[var(--blue)]">
-                        {status}
+                      <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                        row.status === 'OPEN'
+                          ? 'bg-[var(--blue)]/20 text-[var(--blue)]'
+                          : 'bg-gray-500/20 text-gray-400'
+                      }`}>
+                        {row.status}
                       </span>
                     </td>
-                    <td className="px-3 py-2 font-medium">{inst?.base ?? t.symbol}</td>
-                    <td className="px-3 py-2 text-[var(--text-secondary)]">{inst?.label ?? t.symbol}</td>
-                    <td className="px-3 py-2 text-[var(--text-secondary)] whitespace-nowrap">{formatTime(t.openedAt)}</td>
-                    <td className="px-3 py-2 text-[var(--text-secondary)] whitespace-nowrap">{formatTime(t.closedAt)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{convert(t.entryPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{convert(t.exitPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{t.quantity}</td>
+                    <td className="px-3 py-2 font-medium">{inst?.base ?? row.symbol}</td>
+                    <td className="px-3 py-2 text-[var(--text-secondary)]">{inst?.label ?? row.symbol}</td>
+                    <td className="px-3 py-2 text-[var(--text-secondary)] whitespace-nowrap">{formatTime(row.openedAt)}</td>
+                    <td className="px-3 py-2 text-[var(--text-secondary)] whitespace-nowrap">
+                      {row.closedAt ? formatTime(row.closedAt) : '—'}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">{convert(row.entryPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{convert(row.exitPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{row.quantity}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{fmt(value, { decimals: 0 })}</td>
-                    <td className={`px-3 py-2 text-right tabular-nums ${t.pnl >= 0 ? 'text-[var(--green)]' : 'text-[var(--red)]'}`}>
-                      {t.pnl >= 0 ? '+' : '-'}{fmt(Math.abs(t.pnl), { decimals: 0 })}
+                    <td className={`px-3 py-2 text-right tabular-nums ${row.pnl >= 0 ? 'text-[var(--green)]' : 'text-[var(--red)]'}`}>
+                      {row.pnl >= 0 ? '+' : '-'}{fmt(Math.abs(row.pnl), { decimals: 0 })}
                     </td>
-                    <td className={`px-3 py-2 text-right tabular-nums ${t.pnlPct >= 0 ? 'text-[var(--green)]' : 'text-[var(--red)]'}`}>
-                      {t.pnlPct >= 0 ? '+' : ''}{t.pnlPct.toFixed(2)}%
+                    <td className={`px-3 py-2 text-right tabular-nums ${row.pnlPct >= 0 ? 'text-[var(--green)]' : 'text-[var(--red)]'}`}>
+                      {row.pnlPct >= 0 ? '+' : ''}{row.pnlPct.toFixed(2)}%
                     </td>
-                    <td className="px-3 py-2 text-right tabular-nums text-[var(--text-secondary)]">{held}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-[var(--text-secondary)]">{row.held}</td>
                   </tr>
                 )
               })}

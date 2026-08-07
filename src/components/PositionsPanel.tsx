@@ -154,6 +154,59 @@ export default function PositionsPanel({ symbol: _symbol, refreshKey, onTradeCom
   const getName = (sym: string) => getInstrument(sym)?.label ?? sym
   const colHeader = 'px-2 py-2 text-[var(--text-secondary)] font-medium whitespace-nowrap'
 
+  type HistoryRow = {
+    key: string
+    status: 'OPEN' | 'CLOSED'
+    symbol: string
+    openedAt: string
+    closedAt: string | null
+    entryPrice: number
+    exitPrice: number
+    quantity: number
+    pnl: number
+    pnlPct: number
+    held: string
+  }
+
+  const historyRows: HistoryRow[] = [
+    ...positions.map((pos) => {
+      const markUsd = prices[pos.symbol]?.native ?? pos.entryPrice
+      const pnlUsd = (markUsd - pos.entryPrice) * pos.quantity
+      const pnlPercent = pos.entryPrice > 0 ? ((markUsd - pos.entryPrice) / pos.entryPrice) * 100 : 0
+      return {
+        key: `open-${pos.id}`,
+        status: 'OPEN' as const,
+        symbol: pos.symbol,
+        openedAt: pos.createdAt,
+        closedAt: null,
+        entryPrice: pos.entryPrice,
+        exitPrice: markUsd,
+        quantity: pos.quantity,
+        pnl: pnlUsd,
+        pnlPct: pnlPercent,
+        held: formatHeldFromMs(Date.now() - new Date(pos.createdAt).getTime()),
+      }
+    }),
+    ...closedTrades.map((trade) => ({
+      key: `closed-${trade.id}`,
+      status: 'CLOSED' as const,
+      symbol: trade.symbol,
+      openedAt: trade.openedAt,
+      closedAt: trade.closedAt,
+      entryPrice: trade.entryPrice,
+      exitPrice: trade.exitPrice,
+      quantity: trade.quantity,
+      pnl: trade.pnl,
+      pnlPct: trade.pnlPct,
+      held:
+        formatHoldMinutes(trade.holdDuration) !== '—'
+          ? formatHoldMinutes(trade.holdDuration)
+          : formatHeldFromMs(
+              new Date(trade.closedAt).getTime() - new Date(trade.openedAt).getTime()
+            ),
+    })),
+  ]
+
   return (
     <div className="flex flex-1 flex-col overflow-hidden border-r border-[var(--border-color)]">
       <div className="flex items-center gap-1 border-b border-[var(--border-color)] px-2 py-1">
@@ -171,7 +224,7 @@ export default function PositionsPanel({ symbol: _symbol, refreshKey, onTradeCom
             activeTab === 'history' ? 'bg-[var(--bg-hover)] text-[var(--blue)]' : 'text-[var(--text-secondary)]'
           }`}
         >
-          History ({closedTrades.length})
+          History ({historyRows.length})
         </button>
       </div>
 
@@ -238,7 +291,7 @@ export default function PositionsPanel({ symbol: _symbol, refreshKey, onTradeCom
             </table>
           )
         ) : (
-          closedTrades.length === 0 ? (
+          historyRows.length === 0 ? (
             <div className="flex h-full items-center justify-center text-sm text-[var(--text-secondary)]">
               No trade history yet
             </div>
@@ -261,37 +314,36 @@ export default function PositionsPanel({ symbol: _symbol, refreshKey, onTradeCom
                 </tr>
               </thead>
               <tbody>
-                {closedTrades.map((trade) => {
-                  const value = trade.exitPrice * trade.quantity
-                  const status = (trade.side || 'long').toLowerCase() === 'short' ? 'BUY' : 'SELL'
-                  const held =
-                    formatHoldMinutes(trade.holdDuration) !== '—'
-                      ? formatHoldMinutes(trade.holdDuration)
-                      : formatHeldFromMs(
-                          new Date(trade.closedAt).getTime() - new Date(trade.openedAt).getTime()
-                        )
+                {historyRows.map((row) => {
+                  const value = row.exitPrice * row.quantity
                   return (
-                    <tr key={trade.id} className="border-b border-[var(--border-color)] hover:bg-[var(--bg-secondary)]">
+                    <tr key={row.key} className="border-b border-[var(--border-color)] hover:bg-[var(--bg-secondary)]">
                       <td className="px-2 py-2">
-                        <span className="rounded bg-[var(--blue)]/20 px-1.5 py-0.5 text-[10px] font-semibold text-[var(--blue)]">
-                          {status}
+                        <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                          row.status === 'OPEN'
+                            ? 'bg-[var(--blue)]/20 text-[var(--blue)]'
+                            : 'bg-gray-500/20 text-gray-400'
+                        }`}>
+                          {row.status}
                         </span>
                       </td>
-                      <td className="px-2 py-2 font-medium">{getLabel(trade.symbol)}</td>
-                      <td className="px-2 py-2 text-[var(--text-secondary)]">{getName(trade.symbol)}</td>
-                      <td className="px-2 py-2 text-[var(--text-secondary)] whitespace-nowrap">{formatTime(trade.openedAt)}</td>
-                      <td className="px-2 py-2 text-[var(--text-secondary)] whitespace-nowrap">{formatTime(trade.closedAt)}</td>
-                      <td className="px-2 py-2 text-right tabular-nums">{convert(trade.entryPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-                      <td className="px-2 py-2 text-right tabular-nums">{convert(trade.exitPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-                      <td className="px-2 py-2 text-right tabular-nums">{trade.quantity}</td>
+                      <td className="px-2 py-2 font-medium">{getLabel(row.symbol)}</td>
+                      <td className="px-2 py-2 text-[var(--text-secondary)]">{getName(row.symbol)}</td>
+                      <td className="px-2 py-2 text-[var(--text-secondary)] whitespace-nowrap">{formatTime(row.openedAt)}</td>
+                      <td className="px-2 py-2 text-[var(--text-secondary)] whitespace-nowrap">
+                        {row.closedAt ? formatTime(row.closedAt) : '—'}
+                      </td>
+                      <td className="px-2 py-2 text-right tabular-nums">{convert(row.entryPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                      <td className="px-2 py-2 text-right tabular-nums">{convert(row.exitPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                      <td className="px-2 py-2 text-right tabular-nums">{row.quantity}</td>
                       <td className="px-2 py-2 text-right tabular-nums">{fmt(value, { decimals: 0 })}</td>
-                      <td className={`px-2 py-2 text-right tabular-nums ${trade.pnl >= 0 ? 'text-[var(--green)]' : 'text-[var(--red)]'}`}>
-                        {trade.pnl >= 0 ? '+' : '-'}{fmt(Math.abs(trade.pnl), { decimals: 0 })}
+                      <td className={`px-2 py-2 text-right tabular-nums ${row.pnl >= 0 ? 'text-[var(--green)]' : 'text-[var(--red)]'}`}>
+                        {row.pnl >= 0 ? '+' : '-'}{fmt(Math.abs(row.pnl), { decimals: 0 })}
                       </td>
-                      <td className={`px-2 py-2 text-right tabular-nums ${trade.pnlPct >= 0 ? 'text-[var(--green)]' : 'text-[var(--red)]'}`}>
-                        {trade.pnlPct >= 0 ? '+' : ''}{trade.pnlPct.toFixed(2)}%
+                      <td className={`px-2 py-2 text-right tabular-nums ${row.pnlPct >= 0 ? 'text-[var(--green)]' : 'text-[var(--red)]'}`}>
+                        {row.pnlPct >= 0 ? '+' : ''}{row.pnlPct.toFixed(2)}%
                       </td>
-                      <td className="px-2 py-2 text-right tabular-nums text-[var(--text-secondary)]">{held}</td>
+                      <td className="px-2 py-2 text-right tabular-nums text-[var(--text-secondary)]">{row.held}</td>
                     </tr>
                   )
                 })}

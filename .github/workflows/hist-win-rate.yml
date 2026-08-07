@@ -1,0 +1,60 @@
+name: Historical Win Rate Cache
+
+# Weekly (Sun 02:00 UTC ≈ Sun 07:30 IST) + manual: refresh per-symbol ~10y backtest WR for AI Score.
+on:
+  schedule:
+    - cron: '0 2 * * 0'
+  workflow_dispatch:
+
+jobs:
+  hist-wr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Require Turso / database secrets
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+        run: |
+          if [ -z "$TURSO_DATABASE_URL" ] || [ -z "$TURSO_AUTH_TOKEN" ]; then
+            if [ -z "$DATABASE_URL" ]; then
+              echo "::error::Set TURSO_DATABASE_URL + TURSO_AUTH_TOKEN (preferred) or DATABASE_URL."
+              exit 1
+            fi
+            echo "::warning::Turso secrets missing — falling back to DATABASE_URL only."
+          else
+            echo "Turso secrets are set"
+          fi
+
+      - name: Ensure symbol_backtest_perf table
+        env:
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+        run: |
+          if [ -n "$TURSO_DATABASE_URL" ] && [ -n "$TURSO_AUTH_TOKEN" ]; then
+            npx tsx --tsconfig tsconfig.json scripts/migrate-turso-symbol-backtest-perf.ts
+          else
+            echo "Skip Turso migrate (no Turso secrets)"
+          fi
+
+      - name: Sync per-symbol historical win rates (~10y, all Nifty 50)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+          HIST_WR_YEARS: '10'
+        run: npx tsx --tsconfig tsconfig.json scripts/ci/sync-symbol-hist-win-rate.ts

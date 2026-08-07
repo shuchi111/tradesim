@@ -131,7 +131,7 @@ export default function ConfidenceTab({ refreshKey = 0 }: { refreshKey?: number 
             </div>
             <div className="rounded bg-[var(--bg-tertiary)] p-2">
               <div className="text-base font-bold text-[var(--blue)]">10%</div>
-              <div className="text-[var(--text-secondary)]">Win Rate</div>
+              <div className="text-[var(--text-secondary)]">Hist. Win Rate</div>
             </div>
           </div>
         </div>

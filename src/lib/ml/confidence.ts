@@ -1,5 +1,9 @@
 import { extractFeatures, heuristicPrediction, type TradeFeatures } from './features'
 import { generateMultiStrategySignal } from '../strategy'
+import { prisma } from '../prisma'
+import { kronosLongScore } from './kronos-score'
+
+export { kronosLongScore }
 
 /**
  * Composite Confidence Score
@@ -46,15 +50,18 @@ async function getKronosForConfidence(symbol: string): Promise<{
     const { resolveKronosSummary } = await import('@/lib/ui-cache')
     const data = await resolveKronosSummary(symbol)
     if (!data) return null
+    const upside = Number(data.upside_probability)
+    const conf = Number(data.confidence_pct)
+    const vol = Number(data.volatility_amplification)
     return {
-      upside: data.upside_probability ?? 50,
-      vol: data.volatility_amplification ?? 50,
+      upside: Number.isFinite(upside) ? upside : 50,
+      vol: Number.isFinite(vol) ? vol : 50,
       direction: data.direction ?? 'neutral',
-      confidencePct: data.confidence_pct ?? 0,
-      predictedChangePct: data.predicted_change_pct ?? 0,
-      currentPrice: data.current_price ?? 0,
-      forecastFinalPrice: data.forecast_final_price ?? 0,
-      horizon: data.horizon ?? 10,
+      confidencePct: Number.isFinite(conf) ? conf : 50,
+      predictedChangePct: Number(data.predicted_change_pct) || 0,
+      currentPrice: Number(data.current_price) || 0,
+      forecastFinalPrice: Number(data.forecast_final_price) || 0,
+      horizon: Number(data.horizon) || 10,
     }
   } catch {
     return null
@@ -72,11 +79,9 @@ function buildKronosFactors(k: NonNullable<Awaited<ReturnType<typeof getKronosFo
   const dirBias: FactorRow['direction'] =
     dir === 'bullish' ? 'bullish' : dir === 'bearish' ? 'bearish' : 'neutral'
 
-  // 1) Direction — confidencePct × 0.15 (0 if neutral)
   const directionContrib =
     dirBias === 'neutral' ? 0 : Math.round(k.confidencePct * 0.15 * 10) / 10
 
-  // 2) Predicted move — |predictedChangePct| × 2, capped at 10
   const moveContrib = Math.min(10, Math.round(Math.abs(k.predictedChangePct) * 2 * 10) / 10)
   const moveSign = k.predictedChangePct >= 0 ? '+' : ''
   const priceBit =
@@ -86,10 +91,8 @@ function buildKronosFactors(k: NonNullable<Awaited<ReturnType<typeof getKronosFo
   const moveDirection: FactorRow['direction'] =
     k.predictedChangePct > 1 ? 'bullish' : k.predictedChangePct < -1 ? 'bearish' : 'neutral'
 
-  // 3) Model confidence — (confidencePct − 50) × 0.2 when >50%
   const confContrib = Math.max(0, Math.round((k.confidencePct - 50) * 0.2 * 10) / 10)
 
-  // 4) Volatility — amplified (>130%) or suppressed (<100%)
   let volLabel = 'Normal'
   let volDirection: FactorRow['direction'] = 'neutral'
   let volContrib = 0
@@ -97,7 +100,7 @@ function buildKronosFactors(k: NonNullable<Awaited<ReturnType<typeof getKronosFo
     volLabel = 'Amplified'
     volDirection = 'bearish'
     volContrib = 5
-  } else if (k.vol < 100) {
+  } else if (k.vol < 100 && k.vol > 0) {
     volLabel = 'Suppressed'
     volDirection = 'bullish'
     volContrib = 3
@@ -127,6 +130,116 @@ function buildKronosFactors(k: NonNullable<Awaited<ReturnType<typeof getKronosFo
   ].filter((f) => f.contribution > 0)
 }
 
+export type HistoricalWinRateStats = {
+  score: number
+  detail: string
+  winRate: number
+  totalTrades: number
+  avgPnlPct: number
+  years: number
+}
+
+/**
+ * Prefer longest saved backtest (ideally ~10y). Falls back to StrategyPerf overall,
+ * then live closed-trade win rate.
+ */
+export async function getHistoricalWinRateStats(): Promise<HistoricalWinRateStats> {
+  try {
+    const backtests = await prisma.backtest.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 40,
+      select: {
+        startDate: true,
+        endDate: true,
+        winRate: true,
+        totalTrades: true,
+        avgWinPct: true,
+        avgLossPct: true,
+        name: true,
+      },
+    })
+
+    if (backtests.length > 0) {
+      const scored = backtests.map((bt) => {
+        const ms = new Date(bt.endDate).getTime() - new Date(bt.startDate).getTime()
+        const years = Math.max(0.1, ms / (365.25 * 24 * 3600 * 1000))
+        return { bt, years }
+      })
+      // Prefer spans ≥ 8y; otherwise longest available
+      const longOnes = scored.filter((s) => s.years >= 8)
+      const pick = (longOnes.length > 0 ? longOnes : scored).sort((a, b) => b.years - a.years)[0]
+
+      const wr = pick.bt.winRate
+      const trades = pick.bt.totalTrades
+      // Approximate avg pnl% from win/loss averages when available
+      const avgWin = pick.bt.avgWinPct ?? 0
+      const avgLoss = pick.bt.avgLossPct ?? 0
+      const winFrac = wr / 100
+      const avgPnlPct = winFrac * avgWin + (1 - winFrac) * avgLoss
+      const yearLabel = pick.years >= 8 ? '10yr' : `${pick.years.toFixed(1)}yr`
+
+      return {
+        score: Math.round(Math.max(0, Math.min(100, wr))),
+        winRate: wr,
+        totalTrades: trades,
+        avgPnlPct,
+        years: pick.years,
+        detail: `${yearLabel} backtest: ${wr.toFixed(0)}% win rate (${trades} trades, avg ${avgPnlPct >= 0 ? '+' : ''}${avgPnlPct.toFixed(1)}%)`,
+      }
+    }
+  } catch {
+    // fall through
+  }
+
+  try {
+    const overall = await prisma.strategyPerf.findUnique({ where: { strategyName: '_overall' } })
+    if (overall && overall.totalTrades > 0) {
+      return {
+        score: Math.round(Math.max(0, Math.min(100, overall.winRate))),
+        winRate: overall.winRate,
+        totalTrades: overall.totalTrades,
+        avgPnlPct: overall.avgPnlPct,
+        years: 0,
+        detail: `Strategy backtest: ${overall.winRate.toFixed(0)}% win rate (${overall.totalTrades} trades, avg ${overall.avgPnlPct >= 0 ? '+' : ''}${overall.avgPnlPct.toFixed(1)}%)`,
+      }
+    }
+  } catch {
+    // fall through
+  }
+
+  try {
+    const closed = await prisma.customStrategyTrade.findMany({
+      select: { pnl: true, pnlPct: true },
+      take: 500,
+      orderBy: { closedAt: 'desc' },
+    })
+    if (closed.length >= 5) {
+      const wins = closed.filter((t) => t.pnl > 0).length
+      const wr = (wins / closed.length) * 100
+      const avgPnlPct = closed.reduce((s, t) => s + (t.pnlPct || 0), 0) / closed.length
+      return {
+        score: Math.round(Math.max(0, Math.min(100, wr))),
+        winRate: wr,
+        totalTrades: closed.length,
+        avgPnlPct,
+        years: 0,
+        detail: `Live trades: ${wr.toFixed(0)}% win rate (${closed.length} trades, avg ${avgPnlPct >= 0 ? '+' : ''}${avgPnlPct.toFixed(1)}%)`,
+      }
+    }
+  } catch {
+    // fall through
+  }
+
+  return {
+    score: 50,
+    winRate: 50,
+    totalTrades: 0,
+    avgPnlPct: 0,
+    years: 0,
+    detail: 'No backtest yet — run a 10yr backtest for historical win rate',
+  }
+}
+
 /**
  * Calculate composite confidence score for a symbol.
  */
@@ -145,26 +258,26 @@ export async function calculateConfidenceScore(symbol: string): Promise<Confiden
   const mlResult = heuristicPrediction(featureResult.features)
   const mlScore = mlResult.successProbability // 0-100
 
-  // 3. Kronos AI forecast (15%) — from daily cached forecast
+  // 3. Kronos AI forecast (15%) — upside × path-agreement, direction-aware
   const kronosData = await getKronosForConfidence(symbol)
-  let kronosScore = 50  // default neutral if no cache
+  let kronosScore = 50
   let kronosDetail = 'No cached forecast — neutral'
   if (kronosData) {
-    kronosScore = kronosData.upside
-    // Confidence boost: when model strongly predicts upside (>60%), boost the score
-    if (kronosData.upside > 60) {
-      kronosScore = Math.min(100, kronosScore + 10)
-    } else if (kronosData.upside < 40) {
-      kronosScore = Math.max(0, kronosScore - 10)
-    }
-    kronosDetail = `Upside probability: ${kronosData.upside}% (${kronosData.direction}, vol amp ${kronosData.vol}%)${kronosData.upside > 60 ? ' [BOOSTED]' : ''}`
+    kronosScore = kronosLongScore({
+      upside: kronosData.upside,
+      confidencePct: kronosData.confidencePct,
+      direction: kronosData.direction,
+      predictedChangePct: kronosData.predictedChangePct,
+    })
+    const volStr = Number.isFinite(kronosData.vol) ? `${kronosData.vol}%` : 'n/a'
+    kronosDetail = `Upside probability: ${kronosData.upside}% (${kronosData.direction}, vol amp ${volStr})`
   }
 
   // 4. Market regime (15%)
   const regimeScore = calculateRegimeScore(featureResult.features)
 
-  // 5. Historical win rate (10%) — derived from strategy confidence as proxy
-  const histScore = Math.min(100, strategySignal.confidence * 0.8 + 10)
+  // 5. Historical win rate (10%) — from saved backtests (prefer ~10yr)
+  const hist = await getHistoricalWinRateStats()
 
   // Weighted combination
   const overallConfidence = Math.round(
@@ -172,7 +285,7 @@ export async function calculateConfidenceScore(symbol: string): Promise<Confiden
     mlScore * 0.25 +
     kronosScore * 0.15 +
     regimeScore * 0.15 +
-    histScore * 0.10
+    hist.score * 0.10
   )
 
   const recommendation = overallConfidence >= 80 ? 'STRONG BUY'
@@ -189,7 +302,7 @@ export async function calculateConfidenceScore(symbol: string): Promise<Confiden
       mlPrediction: { score: mlScore, weight: 0.25, detail: `ML probability: ${mlScore}%` },
       kronosAI: { score: kronosScore, weight: 0.15, detail: kronosDetail },
       marketRegime: { score: regimeScore, weight: 0.15, detail: getRegimeDetail(featureResult.features) },
-      historicalWinRate: { score: histScore, weight: 0.10, detail: 'Derived from strategy backtest' },
+      historicalWinRate: { score: hist.score, weight: 0.10, detail: hist.detail },
     },
     recommendation,
     factors: [
@@ -203,21 +316,18 @@ export async function calculateConfidenceScore(symbol: string): Promise<Confiden
 function calculateRegimeScore(features: TradeFeatures): number {
   let score = 50
 
-  // Trending markets favor momentum strategies
   if (features.trendRegime === 1) {
-    score += 20 // Uptrend favors buying
+    score += 20
   } else if (features.trendRegime === -1) {
-    score -= 20 // Downtrend disfavors buying
+    score -= 20
   }
 
-  // Low volatility is better for entries
   if (features.volatilityRegime === 0) {
     score += 10
   } else if (features.volatilityRegime === 2) {
     score -= 15
   }
 
-  // Positive momentum adds to regime score
   if (features.momentum10d > 0) {
     score += 5
   }

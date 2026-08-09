@@ -127,7 +127,8 @@ export default function StrategyTab({ onTradeComplete, refreshKey = 0 }: Strateg
             <div>💸 <b>Partial Profit:</b> Sell 50% at <span className="text-[var(--green)]">+5%</span>, stop → breakeven</div>
             <div>⏰ <b>Time Exit:</b> Close after 10 days if stagnant (&lt;3% move)</div>
             <div>⚠️ <b>Circuit Breaker:</b> Stop buying if drawdown &gt; <span className="text-[var(--red)]">6%</span></div>
-            <div>📊 <b>Max Positions:</b> up to 8 (not forced — only quality signals)</div>
+            <div>📊 <b>Positions:</b> unlimited (cash + confidence sizing)</div>
+            <div>💰 <b>Sizing:</b> low score → small amount, high score → larger amount</div>
             <div>💰 <b>Cash Reserve:</b> Always keep <span className="text-[var(--green)]">30%</span> in wallet</div>
             <div>📏 <b>Position Sizing:</b> 4–8% of equity, hard cap <span className="text-[var(--green)]">₹25,000</span>/trade</div>
             <div>🔢 <b>Quantity:</b> Whole shares only (no fractional qty)</div>

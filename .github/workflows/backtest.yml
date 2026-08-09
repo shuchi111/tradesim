@@ -9,7 +9,7 @@ on:
 jobs:
   backtest:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
 
@@ -40,9 +40,10 @@ jobs:
             echo "Turso secrets are set"
           fi
 
-      - name: Run daily backtest
+      - name: Run ~10yr backtest (feeds AI Score historical win rate)
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
           TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+          BACKTEST_LOOKBACK_DAYS: '3650'
         run: npx tsx --tsconfig tsconfig.json scripts/ci/run-backtest-once.ts

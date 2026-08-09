@@ -28,6 +28,14 @@ interface RankedItem {
   factors?: ConfidenceResult['factors']
 }
 
+const COMPONENT_LABELS: Record<string, string> = {
+  strategyAgreement: 'Strategy Agreement',
+  mlPrediction: 'ML Prediction',
+  kronosAI: 'Kronos AI',
+  marketRegime: 'Market Regime',
+  historicalWinRate: 'Historical Win Rate',
+}
+
 export default function ConfidenceTab({ refreshKey = 0 }: { refreshKey?: number }) {
   const [rankings, setRankings] = useState<RankedItem[]>([])
   const [selected, setSelected] = useState<ConfidenceResult | null>(null)
@@ -90,15 +98,21 @@ export default function ConfidenceTab({ refreshKey = 0 }: { refreshKey?: number 
     'AVOID': 'bg-red-500/20 text-red-400 border-red-500/30',
   }
 
+  const recTextColor = (rec: string, score: number) => {
+    if (rec === 'STRONG BUY' || score >= 80) return 'text-green-400'
+    if (rec === 'BUY' || score >= 65) return 'text-blue-400'
+    if (rec === 'AVOID' || score < 45) return 'text-red-400'
+    return 'text-yellow-400'
+  }
+
   return (
     <div className="h-full overflow-y-auto p-4">
       <div className="mx-auto max-w-7xl space-y-4">
-        {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-bold text-[var(--text-primary)]">🧠 AI Confidence Dashboard</h2>
+            <h2 className="text-lg font-bold text-[var(--text-primary)]">AI Score</h2>
             <p className="text-xs text-[var(--text-secondary)]">
-              Composite score: Strategy (35%) + ML (25%) + Kronos AI (15%) + Market Regime (15%) + Win Rate (10%)
+              Composite: Strategy 35% · ML 25% · Kronos 15% · Regime 15% · 10yr Win Rate 10%
             </p>
           </div>
           <button
@@ -106,11 +120,10 @@ export default function ConfidenceTab({ refreshKey = 0 }: { refreshKey?: number 
             disabled={scanning}
             className="rounded-lg bg-[var(--blue)] px-4 py-2 text-xs font-medium text-white hover:bg-[var(--blue)]/80 disabled:opacity-50"
           >
-            {scanning ? `Scanning... ${scanProgress.toFixed(0)}%` : '🔄 Rescan'}
+            {scanning ? `Scanning... ${scanProgress.toFixed(0)}%` : 'Rescan'}
           </button>
         </div>
 
-        {/* Confidence Formula */}
         <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3">
           <div className="grid grid-cols-5 gap-2 text-center text-xs">
             <div className="rounded bg-[var(--bg-tertiary)] p-2">
@@ -122,8 +135,8 @@ export default function ConfidenceTab({ refreshKey = 0 }: { refreshKey?: number 
               <div className="text-[var(--text-secondary)]">ML Prediction</div>
             </div>
             <div className="rounded bg-[var(--bg-tertiary)] p-2">
-              <div className="text-base font-bold text-[var(--orange,var(--blue))]">15%</div>
-              <div className="text-[var(--text-secondary)]">🔮 Kronos AI</div>
+              <div className="text-base font-bold text-[var(--blue)]">15%</div>
+              <div className="text-[var(--text-secondary)]">Kronos AI</div>
             </div>
             <div className="rounded bg-[var(--bg-tertiary)] p-2">
               <div className="text-base font-bold text-[var(--blue)]">15%</div>
@@ -136,10 +149,9 @@ export default function ConfidenceTab({ refreshKey = 0 }: { refreshKey?: number 
           </div>
         </div>
 
-        {/* Rankings */}
         {rankings.length === 0 && scanning ? (
           <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-8 text-center">
-            <p className="text-sm text-[var(--text-secondary)]">Scanning market for opportunities... {scanProgress.toFixed(0)}%</p>
+            <p className="text-sm text-[var(--text-secondary)]">Scanning market... {scanProgress.toFixed(0)}%</p>
           </div>
         ) : rankings.length === 0 ? (
           <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-8 text-center">
@@ -147,7 +159,7 @@ export default function ConfidenceTab({ refreshKey = 0 }: { refreshKey?: number 
           </div>
         ) : (
           <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4">
-            <h3 className="mb-3 text-sm font-semibold text-[var(--text-primary)]">🏆 Opportunity Rankings</h3>
+            <h3 className="mb-3 text-sm font-semibold text-[var(--text-primary)]">Opportunity Rankings</h3>
             <div className="space-y-1">
               {rankings.map((item, idx) => (
                 <div
@@ -180,12 +192,11 @@ export default function ConfidenceTab({ refreshKey = 0 }: { refreshKey?: number 
           </div>
         )}
 
-        {/* Detailed View */}
         {selected && (
-          <div className="rounded-lg border border-[var(--blue)]/30 bg-[var(--bg-secondary)] p-4">
-            <div className="mb-3 flex items-center justify-between">
+          <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-5">
+            <div className="mb-4 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-[var(--text-primary)]">
-                🧠 {selected.symbol} — Confidence Breakdown
+                {selected.symbol} — AI Score
               </h3>
               <button
                 onClick={() => setSelected(null)}
@@ -195,46 +206,52 @@ export default function ConfidenceTab({ refreshKey = 0 }: { refreshKey?: number 
               </button>
             </div>
 
-            {/* Overall Confidence Gauge */}
-            <div className="mb-4 flex items-center gap-6">
+            {/* Gauge + recommendation — matches reference layout */}
+            <div className="mb-5 flex items-center gap-6">
               <ConfidenceGauge score={selected.overallConfidence} />
               <div>
-                <div className={`text-2xl font-bold ${selected.overallConfidence >= 70 ? 'text-green-400' : selected.overallConfidence >= 50 ? 'text-yellow-400' : 'text-red-400'}`}>
+                <div className={`text-3xl font-bold tracking-wide ${recTextColor(selected.recommendation, selected.overallConfidence)}`}>
                   {selected.recommendation}
                 </div>
-                <div className="mt-1 text-xs text-[var(--text-secondary)]">@ ₹{selected.price.toFixed(2)}</div>
+                <div className="mt-1 text-sm text-[var(--text-secondary)]">
+                  @ ₹{selected.price.toFixed(2)}
+                </div>
               </div>
             </div>
 
-            {/* Component Breakdown */}
-            <div className="mb-4 space-y-2">
+            <div className="space-y-2">
               {Object.entries(selected.components).map(([key, val]) => (
-                <div key={key} className="flex items-center gap-3 rounded-lg bg-[var(--bg-tertiary)] p-2">
-                  <span className="w-32 text-xs font-medium capitalize text-[var(--text-primary)]">
-                    {key.replace(/([A-Z])/g, ' $1').trim()}
+                <div key={key} className="flex items-center gap-3 rounded-lg bg-[var(--bg-tertiary)] px-3 py-2.5">
+                  <span className="w-36 shrink-0 text-xs font-medium text-[var(--text-primary)]">
+                    {COMPONENT_LABELS[key] || key}
                   </span>
-                  <div className="flex-1">
-                    <div className="relative h-4 rounded-full bg-[var(--bg-hover)]">
+                  <div className="min-w-0 flex-1">
+                    <div className="relative h-2.5 overflow-hidden rounded-full bg-[var(--bg-hover)]">
                       <div
                         className="absolute h-full rounded-full bg-[var(--blue)]"
-                        style={{ width: `${val.score}%` }}
+                        style={{ width: `${Math.max(0, Math.min(100, val.score))}%` }}
                       />
                     </div>
                   </div>
-                  <span className="w-12 text-right text-xs text-[var(--text-primary)]">{val.score.toFixed(0)}</span>
-                  <span className="w-10 text-right text-[10px] text-[var(--text-secondary)]">{(val.weight * 100).toFixed(0)}%w</span>
-                  <span className="w-48 text-right text-[10px] text-[var(--text-secondary)]">{val.detail}</span>
+                  <span className="w-8 text-right text-xs font-semibold text-[var(--text-primary)]">
+                    {Math.round(val.score)}
+                  </span>
+                  <span className="w-9 text-right text-[10px] text-[var(--text-secondary)]">
+                    {(val.weight * 100).toFixed(0)}%w
+                  </span>
+                  <span className="hidden w-56 truncate text-right text-[10px] text-[var(--text-secondary)] sm:block" title={val.detail}>
+                    {val.detail}
+                  </span>
                 </div>
               ))}
             </div>
 
-            {/* ML Factors */}
             {selected.factors && selected.factors.length > 0 && (
-              <div>
-                <h4 className="mb-2 text-xs font-semibold text-[var(--text-primary)]">🔍 ML Factor Analysis</h4>
+              <div className="mt-4">
+                <h4 className="mb-2 text-xs font-semibold text-[var(--text-primary)]">Factor Analysis</h4>
                 <div className="space-y-1">
                   {selected.factors.map((f, i) => (
-                    <div key={i} className="flex items-center gap-2 rounded bg-[var(--bg-tertiary)] px-3 py-1 text-xs">
+                    <div key={i} className="flex items-center gap-2 rounded bg-[var(--bg-tertiary)] px-3 py-1.5 text-xs">
                       <span className={`w-16 rounded px-1 text-center text-[10px] font-medium ${
                         f.direction === 'bullish' ? 'bg-green-500/20 text-green-400'
                           : f.direction === 'bearish' ? 'bg-red-500/20 text-red-400'
@@ -257,20 +274,25 @@ export default function ConfidenceTab({ refreshKey = 0 }: { refreshKey?: number 
 }
 
 function ConfidenceGauge({ score }: { score: number }) {
-  const color = score >= 80 ? 'text-green-400' : score >= 65 ? 'text-blue-400' : score >= 45 ? 'text-yellow-400' : 'text-red-400'
+  const color =
+    score >= 80 ? 'text-green-400'
+      : score >= 65 ? 'text-blue-400'
+        : score >= 45 ? 'text-yellow-400'
+          : 'text-red-400'
+  const circumference = 2 * Math.PI * 40
   return (
     <div className="flex flex-col items-center">
-      <div className="relative h-20 w-20">
+      <div className="relative h-24 w-24">
         <svg className="h-full w-full -rotate-90" viewBox="0 0 100 100">
           <circle cx="50" cy="50" r="40" fill="none" stroke="currentColor" strokeWidth="8" className="text-[var(--bg-hover)]" />
           <circle
             cx="50" cy="50" r="40" fill="none" stroke="currentColor" strokeWidth="8"
             className={color}
-            strokeDasharray={`${(score / 100) * 251.2} 251.2`}
+            strokeDasharray={`${(score / 100) * circumference} ${circumference}`}
             strokeLinecap="round"
           />
         </svg>
-        <div className={`absolute inset-0 flex items-center justify-center text-xl font-bold ${color}`}>
+        <div className={`absolute inset-0 flex items-center justify-center text-2xl font-bold ${color}`}>
           {score}
         </div>
       </div>

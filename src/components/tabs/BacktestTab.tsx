@@ -70,12 +70,18 @@ const TRADABLE = INSTRUMENTS.filter((i) => i.currency === 'INR' && i.symbol !== 
 
 function defaultStartDate(): string {
   const d = new Date()
-  d.setMonth(d.getMonth() - 3) // 3 months back
+  d.setFullYear(d.getFullYear() - 10) // 10yr default for AI Score historical win rate
   return d.toISOString().slice(0, 10)
 }
 
 function defaultEndDate(): string {
   return new Date().toISOString().slice(0, 10)
+}
+
+function daysAgoIso(days: number): string {
+  const d = new Date()
+  d.setUTCDate(d.getUTCDate() - days)
+  return d.toISOString().slice(0, 10)
 }
 
 // ─── Component ────────────────────────────────────────────────────
@@ -283,6 +289,26 @@ export default function BacktestTab({ refreshKey = 0 }: { refreshKey?: number })
               onChange={(e) => setEndDate(e.target.value)}
               className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
             />
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              {[
+                { label: '3M', days: 90 },
+                { label: '1Y', days: 365 },
+                { label: '5Y', days: 1825 },
+                { label: '10Y', days: 3650 },
+              ].map((p) => (
+                <button
+                  key={p.label}
+                  type="button"
+                  onClick={() => {
+                    setStartDate(daysAgoIso(p.days))
+                    setEndDate(defaultEndDate())
+                  }}
+                  className="rounded border border-slate-600 px-2 py-0.5 text-[10px] text-slate-300 hover:border-blue-500 hover:text-white"
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Stock selector */}

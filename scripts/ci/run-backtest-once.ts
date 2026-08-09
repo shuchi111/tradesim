@@ -1,5 +1,9 @@
 /**
- * CI / GitHub Actions — run a daily portfolio backtest and notify the UI.
+ * CI / GitHub Actions — run a portfolio backtest and notify the UI.
+ *
+ * Env:
+ *   BACKTEST_LOOKBACK_DAYS — default 3650 (~10 years) so AI Score historical
+ *   win-rate uses a long sample. Override to 90 for a faster smoke run.
  */
 import 'dotenv/config'
 import { INSTRUMENTS } from '../../src/types'
@@ -13,20 +17,27 @@ function isoDaysAgo(days: number): string {
 }
 
 async function main() {
+  const lookback = Math.max(
+    90,
+    Number(process.env.BACKTEST_LOOKBACK_DAYS || 3650) || 3650
+  )
   const endDate = isoDaysAgo(0)
-  const startDate = isoDaysAgo(90)
+  const startDate = isoDaysAgo(lookback)
   const symbols = INSTRUMENTS
     .filter((i) => i.currency === 'INR' && i.symbol !== 'NIFTY50')
     .map((i) => i.symbol)
 
-  console.log(`[ci-backtest] Running ${startDate} → ${endDate} on ${symbols.length} symbols...`)
+  const yearsLabel = (lookback / 365.25).toFixed(1)
+  console.log(
+    `[ci-backtest] Running ${startDate} → ${endDate} (~${yearsLabel}y) on ${symbols.length} symbols...`
+  )
 
   const config = {
     symbols,
     startDate,
     endDate,
     startingCapital: 100_000,
-    name: `Daily Backtest ${startDate} → ${endDate}`,
+    name: `${yearsLabel}yr Backtest ${startDate} → ${endDate}`,
   }
 
   const metrics = await runBacktest(config)
@@ -40,7 +51,7 @@ async function main() {
   )
 
   console.log(
-    `[ci-backtest] Done id=${id} return=${metrics.totalReturnPct.toFixed(1)}% trades=${metrics.totalTrades}`
+    `[ci-backtest] Done id=${id} return=${metrics.totalReturnPct.toFixed(1)}% trades=${metrics.totalTrades} wr=${metrics.winRate.toFixed(0)}%`
   )
 }
 

@@ -198,17 +198,23 @@ def _generate_forecast_blocking(
     upside_probability = round((upside_count / len(paths)) * 100, 1)
 
     # Volatility Amplification: probability that forecast volatility > recent historical volatility
-    # Historical: std of daily returns over last `pred_len` bars
-    recent_returns = df['close'].iloc[-pred_len:].pct_change().dropna()
-    hist_vol = float(recent_returns.std())
-    # Forecast: for each path, compute std of daily returns
+    # Historical: std of daily returns over last `pred_len` bars (guard NaN / tiny samples)
+    recent_returns = df['close'].iloc[-max(pred_len, 5):].pct_change().dropna()
+    hist_vol = float(recent_returns.std()) if len(recent_returns) >= 2 else float('nan')
     forecast_vols = []
     for p_idx in range(len(paths)):
         path_closes = stacked[p_idx, :, 3]
-        path_returns = np.diff(path_closes) / path_closes[:-1]
+        if len(path_closes) < 2:
+            forecast_vols.append(0.0)
+            continue
+        path_returns = np.diff(path_closes) / np.maximum(path_closes[:-1], 1e-9)
         forecast_vols.append(float(np.std(path_returns)))
-    vol_exceed_count = int(np.sum(np.array(forecast_vols) > hist_vol))
-    volatility_amplification = round((vol_exceed_count / len(paths)) * 100, 1)
+    if not np.isfinite(hist_vol) or hist_vol <= 0:
+        # Neutral when we cannot compare — avoid bogus 0% that tanks AI score UI
+        volatility_amplification = 50.0
+    else:
+        vol_exceed_count = int(np.sum(np.array(forecast_vols) > hist_vol))
+        volatility_amplification = round((vol_exceed_count / len(paths)) * 100, 1)
 
     # Sample paths for chart rendering (close prices only, per path)
     sample_paths = []

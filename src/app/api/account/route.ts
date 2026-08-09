@@ -53,7 +53,8 @@ export async function GET() {
         lastSipDate: account.lastSipDate,
         totalDeposited,
         cashReservePct: 0.3,
-        maxAllocationPerTrade: 25000,
+        maxAllocationPerTrade: null,
+        maxPositionsAllowed: null,
       },
     })
   } catch {

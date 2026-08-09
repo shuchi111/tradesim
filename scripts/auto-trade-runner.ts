@@ -27,7 +27,7 @@ async function runCycle() {
       `[${new Date().toISOString()}] Auto-trade cycle | ` +
       `Equity: $${risk.totalEquity.toFixed(0)} | ` +
       `Cash: $${risk.cashAvailable.toFixed(0)} (${risk.cashPct.toFixed(1)}%) | ` +
-      `Positions: ${risk.positionsCount}/${risk.maxPositionsAllowed} | ` +
+      `Positions: ${risk.positionsCount} (unlimited) | ` +
       `Drawdown: ${risk.drawdownPct.toFixed(2)}% | ` +
       `Daily P&L: $${risk.dailyPnl.toFixed(0)} | ` +
       `${risk.circuitBreakerActive ? '⚠️ CIRCUIT BREAKER ACTIVE' : '✅ Normal'}`

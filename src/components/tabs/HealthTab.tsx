@@ -12,7 +12,7 @@ interface HealthData {
   positionsCount: number
   dailyPnl: number
   circuitBreakerActive: boolean
-  maxPositionsAllowed: number
+  maxPositionsAllowed: number | null
 }
 
 interface PositionData {
@@ -94,7 +94,8 @@ export default function HealthTab({ refreshKey = 0 }: { refreshKey?: number }) {
     score -= Math.min(30, risk.drawdownPct * 3.75) // drawdown penalty
     score -= risk.circuitBreakerActive ? 20 : 0
     score -= risk.cashPct < 10 ? 15 : risk.cashPct < 20 ? 5 : 0 // cash buffer
-    score -= (risk.positionsCount / risk.maxPositionsAllowed) > 0.8 ? 10 : 0
+    // No hard position cap — light penalty only if very concentrated (>12 names)
+    score -= risk.positionsCount > 12 ? 10 : 0
     return Math.max(0, Math.round(score))
   })() : 0
 
@@ -134,7 +135,8 @@ export default function HealthTab({ refreshKey = 0 }: { refreshKey?: number }) {
               <div className="flex justify-between gap-8">
                 <span className="text-[var(--text-secondary)]">Positions</span>
                 <span className="text-[var(--text-primary)]">
-                  {risk?.positionsCount}/{risk?.maxPositionsAllowed}
+                  {risk?.positionsCount}
+                  {risk?.maxPositionsAllowed != null ? `/${risk.maxPositionsAllowed}` : ' (unlimited)'}
                 </span>
               </div>
               <div className="flex justify-between gap-8">

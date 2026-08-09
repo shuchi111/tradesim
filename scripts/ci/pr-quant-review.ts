@@ -44,8 +44,7 @@ const REQUIRED_CONSTANTS: Array<{ name: string; hint: string }> = [
   { name: "SIP_AMOUNT_INR", hint: "₹20,000 monthly SIP" },
   { name: "SIP_DAY_OF_MONTH", hint: "fixed SIP calendar day (IST)" },
   { name: "CASH_RESERVE_PCT", hint: "minimum wallet cash reserve" },
-  { name: "MAX_ALLOCATION_PER_TRADE", hint: "₹25,000 hard cap per trade" },
-  { name: "MAX_POSITIONS_ALLOWED", hint: "max open positions (cap, not force)" },
+  { name: "MAX_POSITIONS_ALLOWED", hint: "unlimited positions (Infinity/null)" },
 ]
 
 function parseArgs() {
@@ -156,15 +155,15 @@ function analyzeFile(file: string, content: string): Finding[] {
     )
   }
 
-  // --- Missing allocation hard cap ---
+  // --- Confidence-scaled sizing (no fixed ₹ / score gates) ---
   if (file === "src/lib/trading.ts" || file === "src/lib/backtest.ts") {
-    if (!/MAX_ALLOCATION_PER_TRADE|25000|25_000/.test(content)) {
+    if (!/allocationPctFromConfidence/.test(content)) {
       findings.push({
         severity: "blocker",
         file,
-        rule: "max-allocation",
+        rule: "confidence-sizing",
         message:
-          "Missing ₹25,000 max allocation per trade guardrail (MAX_ALLOCATION_PER_TRADE).",
+          "Missing allocationPctFromConfidence — buys must scale size by confidence (low→small, high→large).",
       })
     }
     if (!/CASH_RESERVE_PCT|0\.30|0\.3\b/.test(content)) {
@@ -194,7 +193,7 @@ function analyzeFile(file: string, content: string): Finding[] {
       /while\s*\(\s*(positions|activePositions)\.length\s*<\s*(MAX_POSITIONS|maxPositions|8)/,
       "major",
       "no-force-fill",
-      "Loop forces filling up to max positions. Max 8 is a ceiling — only open trades on quality signals."
+      "Loop forces filling up to a fixed position count. Do not force-open trades to fill slots."
     )
   )
 
@@ -288,18 +287,6 @@ function analyzeTradingTsConstants(content: string | null): Finding[] {
     }
   }
   // Value sanity checks when present
-  const maxAlloc = content.match(/MAX_ALLOCATION_PER_TRADE\s*=\s*([\d_]+)/)
-  if (maxAlloc) {
-    const v = Number(maxAlloc[1].replace(/_/g, ""))
-    if (v > 100000) {
-      findings.push({
-        severity: "major",
-        file: "src/lib/trading.ts",
-        rule: "max-allocation-value",
-        message: `MAX_ALLOCATION_PER_TRADE=${v} exceeds starting capital — concentration risk.`,
-      })
-    }
-  }
   const reserve = content.match(/CASH_RESERVE_PCT\s*=\s*(0\.\d+)/)
   if (reserve && Number(reserve[1]) < 0.15) {
     findings.push({

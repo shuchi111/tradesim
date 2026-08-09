@@ -1,6 +1,12 @@
 import { prisma } from './prisma'
 import { getPrice } from './market'
 import { getInstrument, INSTRUMENTS } from '@/types'
+import {
+  allocationPctFromConfidence,
+  MAX_ALLOCATION_PER_TRADE,
+} from './position-sizing'
+
+export { allocationPctFromConfidence, MAX_ALLOCATION_PER_TRADE } from './position-sizing'
 
 // Starting balance is ₹1,00,000 INR (1 Lakh) — stored natively in INR.
 export const STARTING_BALANCE = 100000
@@ -9,9 +15,8 @@ export const SIP_AMOUNT_INR = 20000
 export const SIP_DAY_OF_MONTH = 7
 /** Keep this fraction of starting equity as uninvestable cash reserve. */
 export const CASH_RESERVE_PCT = 0.30
-/** Hard cap per new position so capital is not concentrated in one stock. */
-export const MAX_ALLOCATION_PER_TRADE = 25000
-export const MAX_POSITIONS_ALLOWED = 8
+/** No hard position count — buy as many symbols as cash + confidence sizing allow. */
+export const MAX_POSITIONS_ALLOWED = Number.POSITIVE_INFINITY
 const MIN_INVESTABLE_CASH = 500
 const MIN_TRADE_VALUE = 100
 // Sell penalty: flat ₹150 INR per sell, permanently lost.
@@ -55,7 +60,11 @@ export function requireWholeShares(quantity: number): number {
   return quantity
 }
 
-/** Confidence-tiered size, capped at MAX_ALLOCATION_PER_TRADE; returns whole-share qty + cost. */
+/**
+ * Confidence-scaled size — no ₹ cap, no min score gate.
+ * Lower score → smaller amount; higher score → larger amount.
+ * Limited only by investable cash (and optional finite maxAllocation).
+ */
 export function sizePosition(opts: {
   totalEquity: number
   confidence: number
@@ -63,13 +72,13 @@ export function sizePosition(opts: {
   price: number
   maxAllocation?: number
 }): { qty: number; allocation: number; allocationPct: number } {
-  const maxAllocation = opts.maxAllocation ?? MAX_ALLOCATION_PER_TRADE
-  let allocationPct = 0.04
-  if (opts.confidence >= 90) allocationPct = 0.08
-  else if (opts.confidence >= 80) allocationPct = 0.06
-
+  const allocationPct = allocationPctFromConfidence(opts.confidence)
   const targetAllocation = opts.totalEquity * allocationPct
-  const capped = Math.min(targetAllocation, opts.investableCash, maxAllocation)
+  const withOptionalCap =
+    opts.maxAllocation != null && Number.isFinite(opts.maxAllocation)
+      ? Math.min(targetAllocation, opts.maxAllocation)
+      : targetAllocation
+  const capped = Math.min(withOptionalCap, opts.investableCash)
   if (capped < MIN_TRADE_VALUE || opts.price <= 0) {
     return { qty: 0, allocation: 0, allocationPct }
   }
@@ -650,7 +659,7 @@ export interface RiskStatus {
   positionsRisked: number
   dailyPnl: number
   circuitBreakerActive: boolean
-  maxPositionsAllowed: number
+  maxPositionsAllowed: number | null
   maxRiskPerTradePct: number
 }
 
@@ -705,8 +714,8 @@ export async function getRiskStatus(): Promise<RiskStatus> {
     dailyPnl,
     // Circuit breaker: stop new buys if drawdown > 6% or daily loss > 2.5%
     circuitBreakerActive: drawdownPct > 6 || dailyPnl < -(totalEquity * 0.025),
-    maxPositionsAllowed: MAX_POSITIONS_ALLOWED,
-    maxRiskPerTradePct: 8, // max 8% of equity per position (also capped at ₹25k)
+    maxPositionsAllowed: null as number | null, // unlimited
+    maxRiskPerTradePct: 35, // high-confidence sizing can use up to ~35% of equity
   }
 }
 
@@ -1068,17 +1077,8 @@ export async function runAutoTrade(): Promise<AutoTradeResult[]> {
     return results
   }
 
-  // --- 3. Max positions check ---
+  // --- 3. Load open positions (no hard position-count cap) ---
   const activePositions = await prisma.position.findMany()
-  if (activePositions.length >= risk.maxPositionsAllowed) {
-    results.push({
-      instrument: 'PORTFOLIO',
-      signal: 'HOLD',
-      action: 'MAX_POSITIONS',
-      detail: `Max positions (${risk.maxPositionsAllowed}) reached. No new buys.`,
-    })
-    return results
-  }
 
   // --- 4. Scan all instruments for buy signals ---
   const account = await ensureAccount()
@@ -1119,42 +1119,34 @@ export async function runAutoTrade(): Promise<AutoTradeResult[]> {
     try {
       const sig = await generateMultiStrategySignal(inst.symbol)
       if (sig.signal === 'BUY') {
-        // RAISED thresholds: require 70+ confidence even with multi-strategy agreement
-        const minConfidence = sig.strategyCount && sig.strategyCount >= 2 ? 70 : 80
-        if (sig.confidence >= minConfidence) {
-          // REJECT overbought entries — buying at RSI > 70 is a losing trade
-          if (sig.indicators && sig.indicators.rsi14 > 70) continue
+        // REJECT overbought entries — buying at RSI > 70 is a losing trade
+        if (sig.indicators && sig.indicators.rsi14 > 70) continue
 
-          // Fetch the full AI confidence score (includes ML, Kronos, regime, win rate, scanner)
-          const aiScore = await calculateConfidenceScore(inst.symbol)
-          const aiConfidence = aiScore?.overallConfidence ?? null
+        // No fixed score gate: any BUY signal is eligible.
+        // Confidence only scales position size (low → small, high → large).
+        const aiScore = await calculateConfidenceScore(inst.symbol)
+        const aiConfidence = aiScore?.overallConfidence ?? null
+        const effectiveConfidence = aiConfidence !== null ? aiConfidence : sig.confidence
 
-          // Use the AI confidence if available; fall back to strategy confidence
-          const effectiveConfidence = aiConfidence !== null ? aiConfidence : sig.confidence
-
-          buyCandidates.push({
-            symbol: inst.symbol,
-            confidence: effectiveConfidence,
-            aiConfidence,
-            price: sig.price,
-            signal: sig,
-            aiScore,
-          })
-        }
+        buyCandidates.push({
+          symbol: inst.symbol,
+          confidence: effectiveConfidence,
+          aiConfidence,
+          price: sig.price,
+          signal: sig,
+          aiScore,
+        })
       }
     } catch {
       // Skip on error
     }
   }
 
-  // Sort by confidence (highest first) — buy the best opportunities
+  // Sort by confidence (highest first) — larger scores get bought first / sized larger
   buyCandidates.sort((a, b) => b.confidence - a.confidence)
 
-  // --- 5. Execute buys: intelligent count (1..max slots) by signal quality; ₹25k max/trade; whole shares ---
-  const slotsAvailable = risk.maxPositionsAllowed - activePositions.length
-  const topCandidates = buyCandidates.slice(0, slotsAvailable)
-
-  for (const candidate of topCandidates) {
+  // --- 5. Execute buys for all candidates while cash allows (no position count / ₹ caps) ---
+  for (const candidate of buyCandidates) {
     investableCash = Math.max(0, remainingBalance - cashReserve)
     if (investableCash < MIN_INVESTABLE_CASH) break
 
@@ -1211,7 +1203,7 @@ export async function runAutoTrade(): Promise<AutoTradeResult[]> {
               atr: candidate.signal.atr,
               indicators: candidate.signal.indicators,
               allocationPct,
-              maxAllocationCap: MAX_ALLOCATION_PER_TRADE,
+              maxAllocationCap: null,
             },
           }
         )

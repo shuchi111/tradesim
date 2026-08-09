@@ -251,7 +251,11 @@ describe('Per-Strategy Statistics', () => {
 })
 
 describe('Position Sizing Logic', () => {
-  const MAX_ALLOCATION_PER_TRADE = 25_000
+  /** Mirrors src/lib/position-sizing.ts */
+  function allocationPctFromConfidence(confidence: number): number {
+    const c = Math.max(0, Math.min(100, confidence))
+    return 0.005 + (c / 100) * 0.345
+  }
 
   function sizeWholeShares(
     equity: number,
@@ -259,51 +263,40 @@ describe('Position Sizing Logic', () => {
     investable: number,
     price: number
   ): { qty: number; cost: number } {
-    let allocationPct = 0.04
-    if (confidence >= 90) allocationPct = 0.08
-    else if (confidence >= 80) allocationPct = 0.06
-    const capped = Math.min(equity * allocationPct, investable, MAX_ALLOCATION_PER_TRADE)
+    const allocationPct = allocationPctFromConfidence(confidence)
+    const capped = Math.min(equity * allocationPct, investable)
     if (capped < 100 || price <= 0) return { qty: 0, cost: 0 }
     const qty = Math.floor(capped / price)
     if (qty < 1) return { qty: 0, cost: 0 }
     return { qty, cost: qty * price }
   }
 
-  it('should allocate 8% for 90%+ confidence', () => {
-    const confidence = 92
-    let allocationPct = 0.04
-    if (confidence >= 90) allocationPct = 0.08
-    else if (confidence >= 80) allocationPct = 0.06
-    expect(allocationPct).toBe(0.08)
+  it('scales allocation continuously with confidence', () => {
+    const low = allocationPctFromConfidence(20)
+    const mid = allocationPctFromConfidence(50)
+    const high = allocationPctFromConfidence(95)
+    expect(low).toBeLessThan(mid)
+    expect(mid).toBeLessThan(high)
   })
 
-  it('should allocate 6% for 80-89% confidence', () => {
-    const confidence = 85
-    let allocationPct = 0.04
-    if (confidence >= 90) allocationPct = 0.08
-    else if (confidence >= 80) allocationPct = 0.06
-    expect(allocationPct).toBe(0.06)
-  })
-
-  it('should allocate 4% for 70-79% confidence', () => {
-    const confidence = 72
-    let allocationPct = 0.04
-    if (confidence >= 90) allocationPct = 0.08
-    else if (confidence >= 80) allocationPct = 0.06
-    expect(allocationPct).toBe(0.04)
+  it('high confidence buys more shares than low confidence at same price', () => {
+    const low = sizeWholeShares(100_000, 20, 70_000, 1000)
+    const high = sizeWholeShares(100_000, 90, 70_000, 1000)
+    expect(high.qty).toBeGreaterThan(low.qty)
   })
 
   it('uses whole shares only', () => {
     const { qty, cost } = sizeWholeShares(100_000, 92, 70_000, 1500)
+    const expectedAlloc = Math.min(100_000 * allocationPctFromConfidence(92), 70_000)
     expect(Number.isInteger(qty)).toBe(true)
-    expect(qty).toBe(Math.floor(8000 / 1500))
+    expect(qty).toBe(Math.floor(expectedAlloc / 1500))
     expect(cost).toBe(qty * 1500)
   })
 
-  it('caps allocation at ₹25,000', () => {
-    const { qty, cost } = sizeWholeShares(1_000_000, 95, 500_000, 100)
-    expect(cost).toBeLessThanOrEqual(MAX_ALLOCATION_PER_TRADE)
-    expect(qty).toBe(250)
+  it('is limited by investable cash, not a fixed ₹ cap', () => {
+    const { cost } = sizeWholeShares(1_000_000, 99, 40_000, 100)
+    expect(cost).toBeLessThanOrEqual(40_000)
+    expect(cost).toBeGreaterThan(25_000) // can exceed old ₹25k cap when cash allows
   })
 })
 

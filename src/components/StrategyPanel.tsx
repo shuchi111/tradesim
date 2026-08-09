@@ -22,7 +22,7 @@ interface RiskStatus {
   positionsRisked: number
   dailyPnl: number
   circuitBreakerActive: boolean
-  maxPositionsAllowed: number
+  maxPositionsAllowed: number | null
   maxRiskPerTradePct: number
 }
 
@@ -205,7 +205,8 @@ export default function StrategyPanel({ onTradeComplete, refreshKey = 0 }: Strat
           <div className="text-center">
             <div className="text-[10px] uppercase text-[var(--text-secondary)]">Positions</div>
             <div className="text-sm font-bold tabular-nums">
-              {risk.positionsCount}/{risk.maxPositionsAllowed}
+              {risk.positionsCount}
+              {risk.maxPositionsAllowed != null ? `/${risk.maxPositionsAllowed}` : ''}
             </div>
             <div className="text-[10px] text-[var(--text-secondary)]">
               {fmt(risk.positionsRisked, { decimals: 0 })}
@@ -230,9 +231,9 @@ export default function StrategyPanel({ onTradeComplete, refreshKey = 0 }: Strat
         <span className="rounded bg-green-900/20 px-2 py-0.5 text-[var(--green)]">🎯 Take-Profit +15%</span>
         <span className="rounded bg-blue-900/20 px-2 py-0.5 text-[var(--blue)]">🔒 Trailing Stop +7%</span>
         <span className="rounded bg-yellow-900/20 px-2 py-0.5 text-[var(--yellow)]">⚠️ Circuit Breaker -6%</span>
-        <span className="rounded bg-[var(--bg-tertiary)] px-2 py-0.5 text-[var(--text-secondary)]">📊 Max 8 Positions</span>
+        <span className="rounded bg-[var(--bg-tertiary)] px-2 py-0.5 text-[var(--text-secondary)]">📊 Unlimited Positions</span>
         <span className="rounded bg-[var(--bg-tertiary)] px-2 py-0.5 text-[var(--text-secondary)]">💰 30% Cash Reserve</span>
-        <span className="rounded bg-[var(--bg-tertiary)] px-2 py-0.5 text-[var(--text-secondary)]">🎯 Min Confidence 70%/80%</span>
+        <span className="rounded bg-[var(--bg-tertiary)] px-2 py-0.5 text-[var(--text-secondary)]">🎯 Size by Confidence (no min gate)</span>
         <span className="rounded bg-[var(--bg-tertiary)] px-2 py-0.5 text-[var(--text-secondary)]">✂️ Partial Profit +5%</span>
         <span className="rounded bg-[var(--bg-tertiary)] px-2 py-0.5 text-[var(--text-secondary)]">⏱️ Time Exit 10d</span>
         <span className="rounded bg-green-900/20 px-2 py-0.5 text-[var(--green)]">✅ All NIFTY 50 Stocks</span>

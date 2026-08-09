@@ -21,11 +21,13 @@ import {
   type SignalDirection,
 } from './strategy'
 
+import {
+  allocationPctFromConfidence,
+} from './position-sizing'
+
 // ─── Constants (mirror trading.ts) ────────────────────────────────
 const STARTING_CAPITAL = 100_000
-const MAX_POSITIONS = 8
 const CASH_RESERVE_PCT = 0.30
-const MAX_ALLOCATION_PER_TRADE = 25_000
 const STOP_LOSS_PCT = -7
 const TAKE_PROFIT_PCT = 15
 const PARTIAL_PROFIT_PCT = 5
@@ -42,10 +44,8 @@ function sizeWholeShares(
   investable: number,
   price: number
 ): { qty: number; cost: number } {
-  let allocationPct = 0.04
-  if (confidence >= 90) allocationPct = 0.08
-  else if (confidence >= 80) allocationPct = 0.06
-  const capped = Math.min(equity * allocationPct, investable, MAX_ALLOCATION_PER_TRADE)
+  const allocationPct = allocationPctFromConfidence(confidence)
+  const capped = Math.min(equity * allocationPct, investable)
   if (capped < 100 || price <= 0) return { qty: 0, cost: 0 }
   const qty = Math.floor(capped / price)
   if (qty < 1) return { qty: 0, cost: 0 }
@@ -556,7 +556,7 @@ export async function runBacktest(config: BacktestConfig): Promise<BacktestMetri
       todayPnl < -(currentEquity * CIRCUIT_BREAKER_DAILY_LOSS_PCT / 100)
 
     // ── 4e. Scan for new BUY signals (skip if circuit breaker active) ──
-    if (!circuitBreakerActive && positions.length < MAX_POSITIONS) {
+    if (!circuitBreakerActive) {
       const cashReserve = currentEquity * CASH_RESERVE_PCT
       const investable = cash - cashReserve
       if (investable >= 500) {
@@ -580,10 +580,7 @@ export async function runBacktest(config: BacktestConfig): Promise<BacktestMetri
           const result = evaluateSignal(klines, barIndex)
           if (result.signal !== 'BUY') continue
 
-          // Entry threshold: same as live trading
-          const activeStrats = result.strategies.filter((s) => s.signal !== 'HOLD').length
-          const minConfidence = activeStrats >= 2 ? 70 : 80
-          if (result.confidence < minConfidence) continue
+          // No fixed score gate — confidence only scales size
 
           // Reject overbought
           const ind = computeIndicators(klines.slice(Math.max(0, barIndex - 119), barIndex + 1))
@@ -600,12 +597,10 @@ export async function runBacktest(config: BacktestConfig): Promise<BacktestMetri
           })
         }
 
-        // Sort by confidence descending
+        // Sort by confidence descending — higher score buys first / larger
         candidates.sort((a, b) => b.confidence - a.confidence)
 
-        // Execute buys — whole shares, ₹25k max/trade, fill only available signal slots (not forced to 8)
-        const slotsAvailable = MAX_POSITIONS - positions.length
-        for (const c of candidates.slice(0, slotsAvailable)) {
+        for (const c of candidates) {
           const investableNow = cash - currentEquity * CASH_RESERVE_PCT
           if (investableNow < 500) break
 
@@ -724,7 +719,72 @@ export async function saveBacktest(
     },
   })
 
+  // Persist win-rate stats so AI confidence can use real backtest history
+  await upsertStrategyPerfFromBacktest(backtest.id, name, metrics)
+
   return backtest.id
+}
+
+async function upsertStrategyPerfFromBacktest(
+  backtestId: number,
+  backtestName: string,
+  metrics: BacktestMetrics
+) {
+  const winFrac = metrics.winRate / 100
+  const overallAvgPnl =
+    winFrac * (metrics.avgWinPct || 0) + (1 - winFrac) * (metrics.avgLossPct || 0)
+
+  await prisma.strategyPerf.upsert({
+    where: { strategyName: '_overall' },
+    create: {
+      strategyName: '_overall',
+      winRate: metrics.winRate,
+      avgPnlPct: overallAvgPnl,
+      totalTrades: metrics.totalTrades,
+      wins: Math.round((metrics.winRate / 100) * metrics.totalTrades),
+      losses: Math.round(((100 - metrics.winRate) / 100) * metrics.totalTrades),
+      backtestId,
+      backtestName,
+      updatedAt: new Date(),
+    },
+    update: {
+      winRate: metrics.winRate,
+      avgPnlPct: overallAvgPnl,
+      totalTrades: metrics.totalTrades,
+      wins: Math.round((metrics.winRate / 100) * metrics.totalTrades),
+      losses: Math.round(((100 - metrics.winRate) / 100) * metrics.totalTrades),
+      backtestId,
+      backtestName,
+      updatedAt: new Date(),
+    },
+  })
+
+  for (const [name, stat] of Object.entries(metrics.strategyStats || {})) {
+    await prisma.strategyPerf.upsert({
+      where: { strategyName: name },
+      create: {
+        strategyName: name,
+        winRate: stat.winRate,
+        avgPnlPct: stat.avgPnlPct,
+        totalTrades: stat.trades,
+        wins: stat.wins,
+        losses: stat.losses,
+        backtestId,
+        backtestName,
+        updatedAt: new Date(),
+      },
+      update: {
+        winRate: stat.winRate,
+        avgPnlPct: stat.avgPnlPct,
+        totalTrades: stat.trades,
+        wins: stat.wins,
+        losses: stat.losses,
+        backtestId,
+        backtestName,
+        updatedAt: new Date(),
+      },
+    })
+  }
 }
 
 export async function getBacktest(id: number) {
